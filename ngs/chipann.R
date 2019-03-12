@@ -1,6 +1,13 @@
 library(GenomicFeatures)
-library(org.Mm.eg.db)
-library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+#genome <- "h19"
+if(genome == "hg19") {
+    library(org.Hg.eg.db)
+    library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+}
+if(genome == "mm10"){
+    library(org.Mm.eg.db)
+    library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+}
 library(ChIPpeakAnno)
 read.dba <- function(dba.file, sel=1:8, ...){ # read DBA restults and return a genomicranges object {{{
     require(data.table)
