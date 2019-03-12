@@ -1,7 +1,7 @@
 library(GenomicFeatures)
 #genome <- "h19"
 if(genome == "hg19") {
-    library(org.Hg.eg.db)
+    library(org.Hs.eg.db)
     library(TxDb.Hsapiens.UCSC.hg19.knownGene)
 }
 if(genome == "mm10"){
