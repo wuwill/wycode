@@ -26,22 +26,6 @@ if(exists("GENOME")){ #{{{
         load(file.path(REF_DIR, "chipseq_pipeline_genome_data/mm9.geneAnn.RData"))
     }
 } #}}}
-read.dba <- function(dba.file, sel=1:8, fixnames=FALSE, skip=0, ...){ # read DBA restults and return a genomicranges object {{{
-    #require(data.table)
-    require(readr)
-    require(GenomicRanges)
-    #peaks <- as.data.frame(fread(dba.file))
-    peaks <- as.data.frame(read_tsv(dba.file, skip=skip))
-    if(!is.null(sel)) peaks <- peaks[,sel]
-    if(fixnames) names(peaks)[1:3] <- c("seqnames", "start", "end")
-    idr.peaks <- makeGRangesFromDataFrame(peaks, TRUE, ...)
-    return(idr.peaks)
-} #}}}narrowPeak.hammock.gz
-write.xls <- function(x, col.names=TRUE, ...) write.table(as.data.frame(x), ..., col.names=col.names, row.names=FALSE, quote=FALSE, sep="\t")
-import.narrowpeak <- function(f){ #{{{
-    library(rtracklayer)
-    import.bed(f, extraCol=c(signalValue='numeric', pValue='numeric', qValue='numeric', peak='integer'))
-} #}}}
 getGeneAnn <- function(){ # used to generate geneAnn for new species; hg and mm geneAnn already genereated and saved in /scatch/ref {{{
     annoData <- genes(TxDb)
     annoData$feature <- annoData$gene_id

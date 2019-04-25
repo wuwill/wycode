@@ -75,13 +75,7 @@ mv(idr), file="runDiffBind.sh")
 #sapply(seq_along(test.groups), mk.diffbind.job, idr=TRUE, intersect=TRUE)
 
 ### new way testing any regions
-find.file <- function(path, pattern, pattern2=NULL, vpattern=NULL){ #{{{
-    cmd <- paste0("find ", path, " -name '", pattern, "'")
-    if(!is.null(pattern2)) cmd <- paste0(cmd, " | grep '", pattern2, "'")
-    if(!is.null(vpattern)) cmd <- paste0(cmd, " | grep -v '", vpattern, "'")
-    return(system(cmd, TRUE))
-} #}}}
-write.xls <- function(x, ...) write.table(as.data.frame(x), ..., col.names=TRUE, row.names=FALSE, quote=FALSE, sep="\t")
+# source find.file.R
 get.atac.sampleSheet <- function(group, atac.dir){ #{{{
     ret <- list()
     i <- match(group, atac.dir$group)
@@ -105,62 +99,106 @@ get.atac.sampleSheet <- function(group, atac.dir){ #{{{
                       bamReads=beds, bamControl=bedctl, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
     return(ret)
 } #}}}
-get.chip2.sampleSheet <- function(group, chip.dir, peak.file="optimal"){ #{{{
+get.chip2.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=FALSE){ #{{{
     #peak.file: NULL - find for each sample; "optimal" optimal peaks; or self specified peaks
     ret <- list()
     i <- match(group, chip.dir$group)
     path <- file.path(chip.dir$top.path[i], chip.dir$dir[i])
     #samples <- list.files(file.path(path, "align"), "^rep")
     #tagAligns <- sapply(file.path(path, "align", samples, "*tn5.tagAlign.gz"), Sys.glob)
-    tagAligns <- find.file(path, "*nodup.tagAlign.gz$", pattern2="bam2ta/")
-    samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
-    beds <- gsub("tagAlign.gz", "bed.gz", tagAligns)
-    file.symlink(tagAligns, beds)
+    if(useBam){ #{{{
+        tagAligns <- beds <- find.file(path, "*.nodup.bam", pattern2="filter/")
+        samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
+    } else {
+        tagAligns <- find.file(path, "*nodup.tagAlign.gz", pattern2="bam2ta/")
+        samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
+        beds <- gsub("tagAlign.gz", "bed.gz", tagAligns)
+        file.symlink(tagAligns, beds)
+    }#}}}
     if(is.null(peak.file)){ #{{{
-        peaks <- find.file(path, "*bfilt.narrowPeak.gz$", pattern2="macs2/")
+        peaks <- find.file(path, "*bfilt.narrowPeak.gz", pattern2="macs2/")
     } else if(peak.file=="optimal") {
-        peaks <- find.file(path, "*narrowPeak.gz$", pattern2="optimal") 
+        peaks <- find.file(path, "*narrowPeak.gz", pattern2="optimal") 
     } else {
         peaks <- peak.file
     } #}}}
     sampleID <- paste0(group, "_", samples)
-    ctrl.tagAligns <- find.file(path, "*nodup.tagAlign.gz$", pattern2="bam2ta_ctl/")
-    if(length(ctrl.tagAligns)==0) {
-        bedctl <- ""
-        ctrl <- ""
-    } else {
-        ctrl <- paste0("ctrl.", sapply(strsplit(ctrl.tagAligns, "/"), grep, pattern="^shard", value=TRUE))
-        bedctl <- gsub("tagAlign.gz", "bed.gz", ctrl.tagAligns)
-        file.symlink(ctrl.tagAligns, bedctl)
-    }
-    ret <- data.frame(SampleID=sampleID, Tissue="", Factor=group, Condition=group, Replicate=gsub("rep", "", samples),
+    if(useBam) {  #  {{{
+        pooled.bam <- find.file(path, "pooled.merged.nodup.bam", pattern2="filter_ctl")
+        all.bams <- find.file(path, "*nodup.bam", pattern2="filter_ctl")
+        n.bams <- length(all.bams)
+        if(length(pooled.bam) == 0){
+            if(n.bams==0) {
+                bedctl <- ctrl <- ""
+            } else if(n.bams==1) {
+                bedctl <- all.bams
+            } else {
+                library(Rsamtools)
+                destBam <- gsub("call-filter_ctl/.*$", "call-filter_ctl/pooled.merged.nodup.bam", all.bams[1])
+                mergeBam(all.bams, destBam)
+                indexBam(destBam)
+                bedctl <- destBam
+            }
+        } else {
+            bedctl <- pooled.bam
+        } #}}}
+    }  else { #  {{{
+        ctrl.tagAligns <- find.file(path, "*nodup.pooled.tagAlign.gz", pattern2="pool_ta_ctl")
+        if(length(ctrl.tagAligns)==0) {
+            bedctl <- ctrl <- ""
+        } else {
+            ctrl <- paste0("ctrl.", sapply(strsplit(ctrl.tagAligns, "/"), grep, pattern="^shard", value=TRUE))
+            bedctl <- gsub("tagAlign.gz", "bed.gz", ctrl.tagAligns)
+            file.symlink(ctrl.tagAligns, bedctl)
+        }
+    } #}}}
+    ret <- data.frame(SampleID=sampleID, Tissue="", Factor=group, Condition=group, Replicate=gsub("shard", "", samples),
                       bamReads=beds, bamControl=bedctl, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
     return(ret)
 } #}}}
-run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE){ #{{{
-    sampleSheet <- if(atac) rbind(get.atac.sampleSheet(group1, atac.dir), get.atac.sampleSheet(group2, atac.dir)) else
-        rbind(get.chip2.sampleSheet(group1, atac.dir, peak.file=peak.file), get.chip2.sampleSheet(group2, atac.dir, peak.file=peak.file))
-    rownames(sampleSheet) <- NULL
-    if(min(table(sampleSheet$Condition))<2) {
-        cat("XXX: only 1 sample in some groups!\n")
-        print(sampleSheet)
-        return()
-    }
+library(DiffBind)
+run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, dba=NULL, useBam=FALSE){ #{{{
     out.dir <- paste0("DBA.", group1, "-", group2)
     if(!file.exists(out.dir)) dir.create(out.dir)
-    o.dir <- setwd(out.dir); on.exit(setwd(o.dir))
-    dba <- dba(sampleSheet=sampleSheet)
-    dba <- dba.count(dba, summits=250)
-    dba <- dba.contrast(dba, categories=DBA_CONDITION, minMembers=2)
-    dba <- dba.analyze(dba)
-    dba.report <- dba.report(dba)
-    write.xls(dba.report, file=paste0("DBA.", out.dir, ".report.xls"))
-    pdf(paste0(out.dir, ".pdf")); #on.exit(dev.off())
-    dba.plotHeatmap(dba)
-    #dba.plotVenn(dba)
-    dba.plotMA(dba)
-    dba.plotVolcano(dba)
-    save(dba, dba.report, file="DBA.RData")
+    o.dir <- setwd(out.dir); 
+    if(is.null(dba)){ #{{{
+        sampleSheet <- if(atac) rbind(get.atac.sampleSheet(group1, atac.dir), get.atac.sampleSheet(group2, atac.dir)) else
+            rbind(get.chip2.sampleSheet(group1, atac.dir, peak.file=peak.file, useBam=useBam),
+                  get.chip2.sampleSheet(group2, atac.dir, peak.file=peak.file, useBam=useBam))
+        rownames(sampleSheet) <- NULL
+        if(min(table(sampleSheet$Condition))<2) {
+            cat("XXX: only 1 sample in some groups!\n")
+            print(sampleSheet)
+            return()
+        }
+        write.xls(sampleSheet, file="sampleSheet.txt")
+        dba <- dba(sampleSheet=sampleSheet)
+        #dba <- dba.count(dba, summits=250, bUseSummarizeOverlaps=TRUE)
+        dba <- if(useBam) dba.count(dba, bUseSummarizeOverlaps=TRUE) else dba.count(dba, summits=250) 
+        dba <- dba.contrast(dba, categories=DBA_CONDITION, minMembers=2)
+        dba <- dba.analyze(dba)
+        save(dba, file="dba.ret.RData")
+    }#}}}
+    my.dba.report <- function(...){ #{{{
+        ret <- dba.report(..., bCalled=FALSE)
+        if(length(ret)<2) return(ret)
+        dba.report(..., bCalled=TRUE)
+    } #}}}
+    dba.report1 <- my.dba.report(dba, th=0.05)
+    dba.report2 <- my.dba.report(dba, th=0.05, bUsePval=TRUE, fold=2)
+    file1 <- paste0("DBA.", out.dir, ".FDR0.05.report.xls")
+    file2 <- paste0("DBA.", out.dir, ".p0.05.Fold2.report.xls")
+    file.pdf <- paste0("DBA.", out.dir, ".pdf")
+    write.xls(dba.report1, file=file1)
+    write.xls(dba.report2, file=file2)
+    pdf(file.pdf); on.exit(dev.off())
+    dba.plotHeatmap(dba); #dba.plotVenn(dba)
+    dba.plotMA(dba);
+    dba.plotMA(dba, bUsePval=TRUE, fold=2);
+    if(length(dba.report1)>0) dba.plotVolcano(dba)
+    if(length(dba.report2)>0) dba.plotVolcano(dba, bUsePval=TRUE, fold=2);
+    save(dba, dba.report1, dba.report2, file="DBA.RData")
+    setwd(o.dir)
 } #}}}
 
 #atac.dir <- data.frame(
