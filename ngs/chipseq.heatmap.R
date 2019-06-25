@@ -1,20 +1,23 @@
 library(EnrichedHeatmap)
-read.bigwig2rle <- function(bigwig, peaks=NULL, bp=500, aggregate=TRUE, group=gsub(".bigwig", "", bigwig), ...){ #{{{
+read.bigwig2rle <- function(bigwig, peaks=NULL, bp=500, aggregate=TRUE, group=gsub(".bigwig", "", bigwig), fun=function(x) x, ...){ #{{{
     if(is.null(peaks)) signal <- import(bigwig, format="BigWig", as="Rle")
     if(!is.null(peaks)){
-        peaks <- resize(peaks, width=bp*2+1, fix="center")
+        if(!is.null(bp)) peaks <- resize(peaks, width=bp*2+1, fix="center")
         signal <- import(bigwig, selection=BigWigSelection(peaks), format="BigWig", as="Rle")
-        pad <- Rle(0, max(end(peaks)))
-        pad.left <- Rle(0, bp)
-        for(chr in seqlevels(signal)){ #{{{
-            signal[[chr]] <- c(pad.left, signal[[chr]], pad)
+        if(!is.null(bp)){ #{{{
+            pad <- Rle(0, max(end(peaks)))
+            pad.left <- Rle(0, bp)
+            for(chr in seqlevels(signal)){ #{{{
+                signal[[chr]] <- c(pad.left, signal[[chr]], pad)
+            } #}}}
+            signal <- signal[GenomicRanges::shift(peaks, bp)]
+        } else {
+            signal <- signal[peaks]
         } #}}}
-        signal <- signal[GenomicRanges::shift(peaks, bp)]
-        #signal <- signal[peaks]
     }
     names(signal) <- group
+    signal <- sapply(signal, function(x) fun(as.vector(x)))
     if(aggregate){ #{{{
-        signal <- sapply(signal, as.vector)
         return(apply(signal, 1, mean))
     } #}}}
     return(signal)

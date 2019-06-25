@@ -11,6 +11,14 @@ if(exists("GENOME")){ #{{{
         orgAnn <- "org.Hs.eg.db"
         load(file.path(REF_DIR, "chipseq_pipeline_genome_data/hg19.geneAnn.RData"))
     }
+    if(GENOME == "hg18") {
+        library(org.Hs.eg.db)
+        library(TxDb.Hsapiens.UCSC.hg18.knownGene)
+        TxDb <- TxDb.Hsapiens.UCSC.hg18.knownGene
+        orgAnn <- "org.Hs.eg.db"
+        load(file.path(REF_DIR, "chipseq_pipeline_genome_data/hg19.geneAnn.RData"))
+        save(geneAnn, file=file.path(REF_DIR, "chipseq_pipeline_genome_data/hg18.geneAnn.RData"))
+    }
     if(GENOME == "mm10"){
         library(org.Mm.eg.db)
         library(TxDb.Mmusculus.UCSC.mm10.knownGene)
@@ -29,7 +37,7 @@ if(exists("GENOME")){ #{{{
 getGeneAnn <- function(){ # used to generate geneAnn for new species; hg and mm geneAnn already genereated and saved in /scatch/ref {{{
     annoData <- genes(TxDb)
     annoData$feature <- annoData$gene_id
-    annoData <- addGeneIDs(annoData, orgAnn='org.Mm.eg.db', feature_id_type='entrez_id', IDs2Add='symbol')
+    annoData <- addGeneIDs(annoData, orgAnn=orgAnn, feature_id_type='entrez_id', IDs2Add='symbol')
     return(annoData)
 } #}}}
 annotateByRegion <- function(){ #{{{
@@ -188,48 +196,133 @@ relevel.csAnno <- function(anno){ #{{{
         lapply(anno, relevel.csAnno)
     }
 } #}}}
-my.annotatePeak <- function(peak.files, tssRegion=c(-3000, 3000), pdf.file="", ...) { #{{{
+my.annotatePeak <- function(peaks, tssRegion=c(-3000, 3000), pdf.file="", ...) { #{{{
     #https://guangchuangyu.github.io/2014/04/visualization-methods-in-chipseeker/
-    peakAnno <- lapply(peak.files, annotatePeak, TxDb=TxDb, annoDb=orgAnn, tssRegion=tssRegion, ...)
+    if("GRanges" %in% class(peaks) || length(peaks)==1){ #{{{
+        peakAnno <- annotatePeak(peaks, TxDb=TxDb, annoDb=orgAnn, tssRegion=tssRegion, ...)
+    } else {
+        peakAnno <- lapply(peaks, annotatePeak, TxDb=TxDb, annoDb=orgAnn, tssRegion=tssRegion, ...)
+    } #}}}
     peakAnno <- relevel.csAnno(peakAnno)
-    if(!is.null(names(peak.files))) names(peakAnno) <- names(peak.files)
-    if(length(peak.files)==1) peakAnno <- peakAnno[[1]]
+    if(is.list(peaks) && !is.null(names(peaks))) names(peakAnno) <- names(peaks)
+    if(is.list(peaks) && length(peaks)==1) peakAnno <- peakAnno[[1]]
     if(!is.null(pdf.file) && pdf.file!="") {
         pdf(pdf.file); on.exit(dev.off())
         print(plotAnnoBar(peakAnno))
         print(plotDistToTSS(peakAnno))
-        if("GRanges" %in% class(peak.files) || length(peak.files)==1){ #{{{
+        if("GRanges" %in% class(peaks)){ #{{{
             print(plotAnnoPie(peakAnno))
             print(vennpie(peakAnno))
             print(upsetplot(peakAnno))
             print(upsetplot(peakAnno, vennpie=TRUE))
+        } else {
+            for(i in seq_along(peaks)){ #{{{
+                print(plotAnnoPie(peakAnno[[i]], main=names(peaks)[i]))
+                print(vennpie(peakAnno[[i]]))
+                print(upsetplot(peakAnno[[i]]))
+                #print(upsetplot(peakAnno[[i]], vennpie=TRUE))
+            } #}}}
         }  #}}}
     }
     return(peakAnno)
 } #}}}
-peakPathway <- function(peakAnno, tssRegion=c(-1000, 1000), fun=c("enrichPathway", "enrichKEGG"), showCategory=15, title="Pathway Enrichment Analysis"){ #{{{
+peakPathway <- function(peakAnno,
+                        pdf.file="",
+                        tssRegion=c(-1000, 1000),
+                        #fun=c("enrichPathway", "enrichKEGG"),
+                        organism = "hsa",  # kegg organism
+                        showCategory=15, title="Pathway Enrichment Analysis"){ #{{{
     ## todo: https://bioconductor.org/packages/release/bioc/vignettes/clusterProfiler/inst/doc/clusterProfiler.html
-    library(ReactomePA) # rectome pathway
-    library(DOSE) # disease ontology
-    library(clusterProfiler) #  for Gene Ontology and KEGG enrichment 
+    library(ReactomePA) # rectome pathway - enrichPathway
+    library(DOSE) # disease ontology - enrichKEGG
+    library(clusterProfiler) #  for Gene Ontology and KEGG enrichment - enrichGo
     if(is.list(peakAnno)){ #{{{
-        genes = lapply(peakAnnoList, function(i) as.data.frame(i)$geneId)
+        genes = lapply(peakAnno, function(i) as.data.frame(i)$geneId)
         if(is.null(genes[[1]]))
-            genes = lapply(peakAnnoList, function(i) seq2gene(i, tssRegion=tssRegion, flankDistance=3000, TxDb=TxDb))
-        pathway1 <- compareCluster(geneCluster   = genes,
-                                   fun           = fun,
-                                   pvalueCutoff  = 0.05,
-                                   pAdjustMethod = "BH")
-        dotplot(pathway1, showCategory = showCategory, title = title)
-        return(pathway1)
+            genes = lapply(peakAnno, function(i) seq2gene(i, tssRegion=tssRegion, flankDistance=3000, TxDb=TxDb))
+        ret <- list()
+        #ret$GO_CC <- enrichGO(gene          = gene,
+        #OrgDb         = orgAnn,
+        #ont           = "CC",
+        #pAdjustMethod = "BH",
+        #qvalueCutoff  = 0.05,
+        #readable      = TRUE)
+        ret$GO_BP <- compareCluster(geneCluster = genes,
+                              OrgDb         = orgAnn,
+                              fun           = "enrichGO",
+                              ont           = "BP",
+                              pAdjustMethod = "BH",
+                              qvalueCutoff  = 0.05,
+                              readable      = TRUE)
+        ret$GO_BP <- compareCluster(geneCluster = genes,
+                              OrgDb         = orgAnn,
+                              fun           = "enrichGO",
+                              ont           = "MF",
+                              pAdjustMethod = "BH",
+                              qvalueCutoff  = 0.05,
+                              readable      = TRUE)
+        ret$KEGG <- compareCluster(geneCluster = genes,
+                                   fun         = "enrichKEGG",
+                               organism     = organism,
+                               qvalueCutoff = 0.05)
+
+        if(!is.null(pdf.file) && pdf.file!=""){ #{{{
+            pdf(pdf.file); on.exit(dev.off())
+            print(dotplot(ret$GO_BP, showCategory=showCategory, title = paste0(title, " - GO_BP")))
+            print(dotplot(ret$GO_MF, showCategory=showCategory, title = paste0(title, " - GO_MF")))
+            print(dotplot(ret$KEGG, showCategory=showCategory, title = paste0(title, " - KEGG")))
+        } #}}}
+
+        return(ret)
     } #}}}
 
     # if peakAnno is not a list
     gene <- as.data.frame(peakAnno)$geneID
     if(is.null(gene)) gene <- seq2gene(peakAnno, tssRegion = tssRegion, flankDistance = 3000, TxDb=TxDb)
-    pathway1 <- get(fun)(gene)
-    dotplot(pathway)
-    return(pathway)
-} #}}}
+    ret <- list()
+    #ret$GO_CC <- enrichGO(gene          = gene,
+                        #OrgDb         = orgAnn,
+                        #ont           = "CC",
+                        #pAdjustMethod = "BH",
+                        #qvalueCutoff  = 0.05,
+                        #readable      = TRUE)
+    ret$GO_BP <- enrichGO(gene          = gene,
+                        OrgDb         = orgAnn,
+                        ont           = "BP",
+                        pAdjustMethod = "BH",
+                        qvalueCutoff  = 0.05,
+                        readable      = TRUE)
+    ret$GO_MF <- enrichGO(gene          = gene,
+                        OrgDb         = orgAnn,
+                        ont           = "MF",
+                        pAdjustMethod = "BH",
+                        qvalueCutoff  = 0.05,
+                        readable      = TRUE)
+    ret$KEGG <- enrichKEGG(gene         = gene,
+                     organism     = organism,
+                     qvalueCutoff = 0.05)
 
+    if(!is.null(pdf.file) && pdf.file!=""){ #{{{
+        pdf(pdf.file); on.exit(dev.off())
+        print(dotplot(ret$GO_BP, showCategory=showCategory, title = paste0(title, " - GO_BP")))
+        print(dotplot(ret$GO_MF, showCategory=showCategory, title = paste0(title, " - GO_MF")))
+        print(dotplot(ret$KEGG, showCategory=showCategory, title = paste0(title, " - KEGG")))
+    } #}}}
+
+    return(ret)
+} #}}}
+peak2gene <- function(peakAnno, tssRegion=c(-1000, 1000), organism = "hsa"){  # kegg organism #{{{
+    if(is.list(peakAnno)){ #{{{
+        genes = lapply(peakAnno, function(i) as.data.frame(i)$geneId)
+        if(is.null(genes[[1]]))
+            genes = lapply(peakAnno, function(i) seq2gene(i, tssRegion=tssRegion, flankDistance=3000, TxDb=TxDb))
+        return(genes)
+    } #}}}
+
+    # if peakAnno is not a list
+    gene <- as.data.frame(peakAnno)$geneID
+    if(is.null(gene)) gene <- seq2gene(peakAnno, tssRegion = tssRegion, flankDistance = 3000, TxDb=TxDb)
+    return(gene)
+
+} #}}}
 

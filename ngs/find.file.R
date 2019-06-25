@@ -4,7 +4,7 @@ find.file <- function(path, pattern, pattern2=NULL, vpattern=NULL){ #{{{
     if(!is.null(vpattern)) cmd <- paste0(cmd, " | grep -v '", vpattern, "'")
     return(system(cmd, TRUE))
 } #}}}
-get.chip.file.encode <- function(path, type, pooled=TRUE){ #{{{
+get.chip.file <- function(path, type, pooled=TRUE){ #{{{
     # type in bam, bw, peak
     ret <-
         if(pooled){ #{{{
