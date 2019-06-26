@@ -137,7 +137,7 @@ createChipseqFromFq <- function(group, input.group, sample.info, genome, fq.dirs
 } #}}}
 
 compileMultiResumedRuns <- function(top.dir){ #{{{
-    result.path <- file.path(top.dir, "cromwell-executions/chip")
+    result.path <- Sys.glob(file.path(top.dir, "cromwell-executions/*"))
     old.dir <- setwd(result.path); on.exit(setwd(old.dir))
     runs <- paste0(system("ls -t", TRUE), "/")
     n <- length(runs)
@@ -148,7 +148,7 @@ compileMultiResumedRuns <- function(top.dir){ #{{{
     }
 } #}}}
 
-cpToHTCFdownload <- function(top.dir, dest.dir, files2cp=c('qc.html', "qc.json", "*pooled.fc.signal.bigwig", "*optimal_peak.narrowPeak.*gz", 'overlap.reproducibility.qc')){ #  {{{
+cpToHTCFdownload <- function(top.dir, dest.dir, files2cp=c('qc.html', "qc.json", "*pooled.fc.signal.bigwig", "*optimal*.narrowPeak.*gz", 'overlap.reproducibility.qc')){ #  {{{
                              old.dir <- setwd(top.dir); on.exit(setwd(old.dir))
                              dest.dir <- file.path(dest.dir, basename(top.dir))
                              if(!file.exists(dest.dir)) dir.create(dest.dir)
@@ -157,9 +157,10 @@ cpToHTCFdownload <- function(top.dir, dest.dir, files2cp=c('qc.html', "qc.json",
                              } #}}}
                              file.copy(unlist(lapply(files2cp, find.files)), dest.dir)
 }#}}}
-postResults <- function(top.dir=NULL, dest.dir, overwrite=FALSE){ #{{{
+postResults <- function(top.dir=NULL, dest.dir, overwrite=FALSE, atac=FALSE){ #{{{
     if(is.null(top.dir)){ #{{{
-        top.dirs <- list.files(pattern="_minus_")
+        top.dirs <- list.files(pattern=ifelse(atac, "_atac$", "_minus_"))
+        print(top.dirs)
         sapply(top.dirs, postResults, dest.dir=dest.dir, overwrite=overwrite)
         return()
     } #}}}
@@ -172,7 +173,7 @@ postResults <- function(top.dir=NULL, dest.dir, overwrite=FALSE){ #{{{
     compileMultiResumedRuns(top.dir)
     old.dir <- setwd(top.dir); on.exit(setwd(old.dir))
     if(!file.exists(result.dir)) dir.create(result.dir)
-    system(paste0("cp -r cromwell-executions/chip/*/call-* ", result.dir))
+    system(paste0("cp -r cromwell-executions/*/*/call-* ", result.dir))
     system(paste0("cp *.json ", result.dir))
     return(invisible(TRUE))
 } #}}}
@@ -184,7 +185,8 @@ postDemux <- function(runs, dest.dir, overwrite=FALSE){ #{{{
         return()
     }
     if(!file.exists(dest.dir)) dir.create(dest.dir)
-    sapply(runs, function(run) system(paste0("cp -r /scratch/gtac/analysis/demux/", run, " ", dest.dir)))
+    if(file.exists(file.path("/scratch/gtac/analysis/demux/", runs[1])))
+        sapply(runs, function(run) system(paste0("cp -r /scratch/gtac/analysis/demux/", run, " ", dest.dir)))
 } #}}}
 
 getQcUrl <- function(dest.dir, top.url=NULL){ #{{{
@@ -215,7 +217,7 @@ serveData <- function(dest.dir){ #{{{
 } #}}}
 getWuBrowserLink <- function(dest.dir, top.url=NULL, genome="hg19"){ #{{{
     dest.dir <- gsub("/+$", "", dest.dir)
-    bigwig <- find.file(dest.dir, '*.fc.signal.bigwig', "call-macs2/shard")
+    bigwig <- find.file(dest.dir, '*.fc.signal.bigwig', "call-macs2.*pooled/")
     json.file <- file.path(dest.dir, "pool_fc.json")
     library(rjson)
     get.track.json <- function(bigwig){ #{{{
@@ -332,5 +334,149 @@ cd ", work.dir, "
 ", tabixBed("call-macs2_pooled/execution/epic2.naive_overlaps.txt"), "
 ", file=sh.file, sep="")
     if(submit) system(paste0("sbatch ", sh.file))
+    return(sh.file)
+} #}}}
+
+### ATAC
+createAtacInputJson <- function(fq1, fq2=NULL, genome='mm10',
+                                   title=basename(file), description=title, type="atac",
+                                   file="",
+                                   ...){ #{{{
+    # by will@wustl.edu at 05/07/2019
+    ## other args in ... -
+    ## write to json file if file is specified
+
+    args <- list(...)
+    library(rjson)
+    input <- list()
+    input1 <- input2 <- input3 <- list()
+    if(genome == "mm10") input$atac.genome_tsv <- "/scratch/ref/gtac/reference_sequences/chipseq_pipeline_genome_data/mm10/mm10.tsv"
+    if(genome == "hg19") input$atac.genome_tsv <- "/scratch/ref/gtac/reference_sequences/chipseq_pipeline_genome_data/hg19/hg19.tsv"
+    if(genome == "mm9") input$atac.genome_tsv <- "/scratch/ref/gtac/reference_sequences/chipseq_pipeline_genome_data/mm9/mm9.tsv"
+    input$atac.paired_end <- !is.null(fq2)
+    if(is.list(fq1)){ #{{{
+        nrep <- length(fq1)
+        for(i in 1:nrep){ #{{{
+            input[[paste0("atac.fastqs_rep", i, "_R1")]] <- if(nrep>1) fq1[[i]] else fq1
+            if(input$atac.paired_end)
+                input[[paste0("atac.fastqs_rep", i, "_R2")]] <- if(nrep>1) fq2[[i]] else fq2
+        } #}}}
+    } else{
+        input[["atac.fastqs_rep1_R1"]] <- fq1
+        if(input$atac.paired_end)
+            input[["atac.fastqs_rep1_R2"]] <- fq2
+    } #}}}
+    input$atac.auto_detect_adapter <- TRUE
+    input$atac.title <- title
+    input$atac.description <- description
+    input$atac.pipeline_type <- type
+    input$"atac.cutadapt_param" <- "-e 0.1 -m 5"
+    input$"atac.enable_count_signal_track" <- TRUE
+    input$"atac.multimapping" <- 0
+    input$"atac.bowtie2_param_pe" <- "-X2000 --mm --local"
+    input$"atac.bowtie2_param_se" <- "--local"
+    #"atac.dup_marker" : "picard",
+    input$"atac.mapq_thresh" <- 30
+    input$"atac.no_dup_removal" <- FALSE
+    input$"atac.mito_chr_name" <- "chrM"
+    input$"atac.regex_filter_reads" <- "chrM"
+    input$"atac.subsample_reads" <- 0
+    input$"atac.enable_xcor" <- TRUE
+    input$"atac.xcor_subsample_reads" <- 25000000
+    input$"atac.keep_irregular_chr_in_bfilt_peak" <- FALSE
+    input$"atac.cap_num_peak" <- 300000
+    input$"atac.pval_thresh" <- 0.01
+    input$"atac.smooth_win" <- 150
+    input$"atac.enable_idr" <- TRUE
+    input$"atac.idr_thresh" <- 0.1
+    input$"atac.disable_ataqc" <- FALSE
+    input$"atac.bowtie2_cpu" <- 6
+    input$"atac.bowtie2_mem_mb" <- 24000
+    input$"atac.bowtie2_time_hr" <- 48
+    input$"atac.filter_cpu" <- 2
+    input$"atac.filter_mem_mb" <- 20000
+    input$"atac.filter_time_hr" <- 24
+    input$"atac.bam2ta_cpu" <- 2
+    input$"atac.bam2ta_mem_mb" <- 10000
+    input$"atac.spr_mem_mb" <- 16000
+    input$"atac.xcor_cpu" <- 2
+    input$"atac.xcor_mem_mb" <- 16000
+    input$"atac.xcor_time_hr" <- 6
+    input$"atac.macs2_mem_mb" <- 16000
+    input$"atac.macs2_time_hr" <- 24
+    input$"atac.ataqc_mem_mb" <- 16000
+    input$"atac.ataqc_mem_java_mb" <- 15000
+    input$"atac.ataqc_time_hr" <- 24
+    #input$input$chip.always_use_pooled_ctl <- use_pooled_ctl
+    input<- c(input, args)
+    ret <- toJSON(input, indent=4)
+    if(!is.null(file) && file!="") cat(ret, file=file)
+    return(invisible(ret))
+    # use toJSON(input, beatify=TRUE) to convert 
+} #}}}
+
+createAtacSlurmSh <- function(input.json, nrep=2){ #{{{
+    job.name <- gsub(".json$", "", basename(input.json))
+    sh.file <- gsub(".json$", ".sh", input.json)
+    parent.dir <- dirname(normalizePath(input.json))
+
+    cat("#!/bin/bash
+#SBATCH -n 1
+#SBATCH --ntasks-per-node=1
+#SBATCH --job-name=", job.name, "
+#SBATCH --mem=", min(max(12*nrep, 24), 64), "G
+#SBATCH --cpus-per-task=", min(nrep+1, 5), "
+
+cd ", parent.dir, "
+module load java || true
+source /scratch/gtac/software/atac/set.env.mc3.sh
+source activate encode-atac-seq-pipeline
+
+java -jar -Dconfig.file=/scratch/gtac/software/atac/atac-seq-pipeline/backends/backend.conf \\
+-Dbackend.providers.Local.config.concurrent-job-limit=", nrep, " \\
+/scratch/gtac/software/atac/cromwell-34.jar run /scratch/gtac/software/atac/atac-seq-pipeline/atac.wyang.wdl -i ", basename(input.json), " -m metadata.json
+", file=sh.file, sep="")
+    return(sh.file)
+} #}}}
+createAtacFromFq <- function(group, sample.info, genome, fq.dirs, type="tf", suffix="", file=paste0(group, ifelse(suffix=="", "", paste0("_", suffix))), submit=TRUE, ...){ #{{{
+    ## sample.info columns
+    #   - manditory: group, name
+    #   - optional:  (fq1 | index)
+    i.sample <- sample.info$group %in% group
+    if(is.null(sample.info$fq1)){  #{{{ ## find fq files based on indexes
+        sample.indexes <- sample.info$index[i.sample]
+        fqs <- lapply(sample.indexes, findFq, dirs=fq.dirs)
+        fq1 <- lapply(fqs, function(x) x$fq1)
+        fq2 <- lapply(fqs, function(x) x$fq2)
+        if(length(unlist(fq2))<1)
+            fq2 <- NULL
+        #}}}
+    } else { #  {{{ ## get fq files from columns fq1, fq2
+        get.parsed.fq <- function(i, forward=TRUE){ #{{{
+            fqs <- if(forward) sample.info$fq1[i] else sample.info$fq2[i]
+            if(any(grepl(";", fqs))) return(lapply(strsplit(fqs, ";"), gsub, pattern=" +", replacement=""))
+            if(any(grepl(",", fqs))) return(lapply(strsplit(fqs, ","), gsub, pattern=" +", replacement=""))
+            if(any(grepl("\t", fqs))) return(lapply(strsplit(fqs, "\t"), gsub, pattern=" +", replacement=""))
+            if(any(grepl(" ", fqs))) return(lapply(strsplit(fqs, " +"), function(x) x))
+            return(lapply(strsplit(fqs, " +"), function(x) x))
+        } #}}}
+        fq1 <- lapply(which(i.sample), get.parsed.fq)
+        if(is.null(sample.info$fq2)){
+            fq2 <- NULL
+        } else {
+            fq2 <- lapply(which(i.sample), get.parsed.fq, forward=FALSE)
+        }
+    } #}}}
+
+    dir.create(file)
+    json.file <- paste0(file, "/", file, ".json")
+
+    createAtacInputJson(fq1, fq2, genome=genome,
+                           type=type,
+                           file=json.file, ...)
+
+
+    sh.file <- createAtacSlurmSh(json.file, nrep=sum(i.sample))
+    if(submit) system(paste("sbatch", sh.file))
     return(sh.file)
 } #}}}

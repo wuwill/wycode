@@ -12,16 +12,25 @@ make_option(c("-G", "--group"), action = "store", default=NULL, help = "Group in
                     - 2 columns: sample name, sample group;
                     - 4 columns: sample key with additional 4th column for sample group.
                     Alternatively, use tab delimited file with header - name, group, fq1 (and/or) fq2. This allows using custom fastq files as input."),
-make_option(c("-C", "--contrast"), action = "store", default=NULL, help = "Contrast groups file. Default: 'contrast.txt' within the project directory.
-                    Tab delimited file with 2 columns: sample group, control group."),
 make_option(c("--notsubmit"), action = "store_true", default=FALSE, help = "When specified, creates script files without submitting jobs to SLURM."),
 make_option(c("-d", "--directory"), action = "store", default=NULL, help = "Work directory within '/scratch/gtac/analysis/chipseq'. Default: [run_lane_customer]."),
 make_option(c("-p", "--postresults"), action = "store_true", default=FALSE, help = "Post analysis results rather than perform analysis."),
 make_option(c("-o", "--overwrite"), action = "store_true", default=FALSE, help = "- For posting resutls: when specified, overwrite posted result files."),
 make_option(c("-u", "--url"), action = "store", default=NULL, help = "- For posting resutls: GTAC_RUN_DATA URL. Defult: generate URL using HTCF 'serve'. Make sure to 'module load HTCF'.")
 )
-opt_parser <- OptionParser(usage = "%prog [options]\n\nExamples:\n%prog -r 1234_12 -c customer -g hg19 --notsubmit\n%prog -r 1234_12 -c customer -g hg19 --postresults\n\n>>> For more complex situations, make sure to specify sample groups and contrasting groups by creating samples.txt and contrast.txt within the project directory before running this command (see options below) !!!", option_list=option_list)
-opt <- parse_args(opt_parser)
+opt_parser <- OptionParser(usage = "%prog [options]\n\nExamples:\n%prog -r 1234_12 -c customer -g hg19 --notsubmit\n%prog -r 1234_12 -c customer -g hg19 --postresults\n\n>>> For more complex situations, make sure to specify sample groups by creating samples.txt within the project directory before running this command (see options below) !!!", option_list=option_list)
+debug <- FALSE
+if(debug){
+    opt <- list(run="2988_12",
+                     genome="mm10",
+                     customer="magee",
+                     samplekey=NULL,
+                     group=NULL,
+                     notsubmit=TRUE,
+                     directory="2988_12_magee_atac",
+                     postresults=FALSE, overwrite=FALSE, url=NULL)
+
+} else opt <- parse_args(opt_parser)
 if(is.null(opt$run) && is.null(opt$directory)) {
     print_help(opt_parser)
     stop("More options required for running the script.")
@@ -34,13 +43,12 @@ customer <- tolower(opt$customer)
 POST_RESULTS <- opt$postresults # MAKE SURE to 'module load HTCF' before running R script to post results, so that URL will be created for the posted data.
 sample.key.file <- if(is.null(opt$samplekey)) opt$samplekey else normalizePath(opt$samplekey)
 sample.group.file <- if(is.null(opt$group)) opt$group else normalizePath(opt$group)
-comparison.file <- if(is.null(opt$contrast)) opt$contrast else normalizePath(opt$contrast)
 work.dir <- opt$directory
 cat("Specified options:\n")
 print(opt)
 
 # deparse multiple run lanes --------------------------------------------------------------------------------#
-#if(length(runs)>1){
+#if(length(runs)>1  || nc){
     run_lanes <- strsplit(runs, "_")
     runs <- sapply(run_lanes, function(x) x[1])
     lanes <- sapply(run_lanes, function(x) x[2])
@@ -76,7 +84,6 @@ library(readr)
 if(!POST_RESULTS) {  #{{{
     # look for sample.group.file & comparison.file
     if(is.null(sample.group.file) && file.exists("samples.txt")) sample.group.file <- "samples.txt"
-    if(is.null(comparison.file) && file.exists("contrasts.txt")) comparison.file <- "contrasts.txt"
 
     if(!is.null(sample.group.file)){
         cat("Reading sample group info from", sample.group.file, "\n")
@@ -122,26 +129,13 @@ if(!POST_RESULTS) {  #{{{
         info$group <- info$name
     }
 
-    if(!is.null(comparison.file)){
-        cat("Read contrasting groups from", comparison.file, "\n")
-        contrastingGroups <- read_tsv(comparison.file, col_names=FALSE)
-    } else {
-        cat("No contrasting information provided! Try figuring out contrasting groups by comparing to 'input' and 'igg'!\n")
-        info$group <- tolower(info$group)
-        control <- unique(info$group[info$group %in% c("input", "igg")])
-        contrastingGroups <- cbind(rep(setdiff(info$group, control), each=length(control)), control)
-        if(nrow(contrastingGroups)<1) stop(" - Failed to figure out contrasting groups. Fix this by providing a contrast groups file using '-C'.")
-    }
-
     cat("Sample information:\n")
     print(as.data.frame(info))
-    cat("\nContrast groups:\n")
-    print(contrastingGroups)
 
-    for(i in 1:nrow(contrastingGroups)){ #{{{
-        task.name <- paste0(contrastingGroups[i,1], "_minus_", contrastingGroups[i,2])
-        createChipseqFromFq(contrastingGroups[i,1], contrastingGroups[i,2],
-                            info, genome, file.path(demux.dir, runs), type="histone",
+    unique.groups <- unique(info$group)
+    for(group in unique.groups){ #{{{
+        task.name <- paste0(group, "_atac")
+        createAtacFromFq(group, info, genome, file.path(demux.dir, runs), type="tf",
                             file=task.name, submit=submit)
     } #}}}
 } #}}}
@@ -154,10 +148,10 @@ if(POST_RESULTS){
     overwrite <- opt$overwrite
     top.url <- opt$url
     post.dir <- file.path("/scratch/gtac/GTAC_RUN_DATA/", paste0(capitalize(customer), '_', RUNS))
-    postResults(dest.dir=post.dir, overwrite=overwrite)
+    postResults(dest.dir=post.dir, overwrite=overwrite, atac=TRUE)
     postDemux(runs, dest.dir=post.dir, overwrite=overwrite)
     if(is.null(top.url)) top.url <- serveData(post.dir)
-    cat("Data available at:\n", top.url, "\n\n")
+    cat("\nData available at:\n", top.url, "\n\n")
     cat("QC reports available at:", "\n")
     cat(getQcUrl(post.dir, top.url=top.url), sep="\n")
     cat("\n")
