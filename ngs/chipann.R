@@ -214,7 +214,7 @@ my.annotatePeak <- function(peaks, tssRegion=c(-3000, 3000), pdf.file="", ...) {
             print(plotAnnoPie(peakAnno))
             print(vennpie(peakAnno))
             print(upsetplot(peakAnno))
-            print(upsetplot(peakAnno, vennpie=TRUE))
+            #print(upsetplot(peakAnno, vennpie=TRUE))
         } else {
             for(i in seq_along(peaks)){ #{{{
                 print(plotAnnoPie(peakAnno[[i]], main=names(peaks)[i]))

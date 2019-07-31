@@ -242,7 +242,7 @@ getWuBrowserLink <- function(dest.dir, top.url=NULL, genome="hg19"){ #{{{
 } #}}}
 getWuBrowserLink4bw <- function(bigwig, track.names=gsub(".fc.signal.b.*$", "", basename(bigwig)), json.file='', dest.dir, top.url=NULL, genome="hg19"){ #{{{
     bigwig <- normalizePath(bigwig)
-    json.file <- if(is.null(json.file)) file.path(dest.dir, "pool_fc.json") else file.path(dest.dir, json.file)
+    json.file <- if(is.null(json.file) || json.file %in% c("", NA)) file.path(dest.dir, "pool_fc.json") else file.path(dest.dir, json.file)
     library(rjson)
     # check if bigwig files are within dest.dir; if not create a sub folder called 'signals', and copy bigwig files
     if(any(!grepl(dest.dir, bigwig, fix=TRUE))) { #{{{
