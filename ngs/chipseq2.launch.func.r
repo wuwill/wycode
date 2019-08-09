@@ -217,7 +217,13 @@ serveData <- function(dest.dir){ #{{{
 } #}}}
 getWuBrowserLink <- function(dest.dir, top.url=NULL, genome="hg19"){ #{{{
     dest.dir <- gsub("/+$", "", dest.dir)
-    bigwig <- find.file(dest.dir, '*.fc.signal.bigwig', "call-macs2.*pooled/")
+    bigwig0 <- find.file(dest.dir, '*.fc.signal.bigwig', "call-macs2/shard-0")
+    chip.subfolders <- gsub("/cromwell-ex.*$", "", bigwig0)
+    bigwig <- sapply(seq_along(chip.subfolders), function(i){
+                     ret <- suppressWarnings(ret <- find.file(chip.subfolders[i], "*.fc.signal.*", "call-macs2.*pooled/"))
+                     if(length(ret)<1) ret <- bigwig0[i]
+                     return(ret)})
+    #bigwig <- find.file(dest.dir, '*.fc.signal.bigwig', "call-macs2.*pooled/")
     json.file <- file.path(dest.dir, "pool_fc.json")
     library(rjson)
     get.track.json <- function(bigwig){ #{{{

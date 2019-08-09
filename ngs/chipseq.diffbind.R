@@ -283,11 +283,11 @@ run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, db
         dba.report(..., bCalled=TRUE, method=method)
     } #}}}
     dba.report1 <- my.dba.report(dba, th=0.1)
-    dba.report2 <- my.dba.report(dba, th=0.1, bUsePval=TRUE, fold=2)
+    dba.report2 <- my.dba.report(dba, th=0.01, bUsePval=TRUE, fold=2)
     dba.report3 <- my.dba.report(dba, th=0.05)
-    file1 <- paste0("DBA.", out.dir, ".FDR0.1.report.xls")
-    file2 <- paste0("DBA.", out.dir, ".p0.1.Fold2.report.xls")
-    file3 <- paste0("DBA.", out.dir, ".FDR0.05.report.xls")
+    file1 <- paste0("DBA.", out.dir, '.', method, ".FDR0.1.report.xls")
+    file2 <- paste0("DBA.", out.dir, '.', method, ".p0.01.Fold2.report.xls")
+    file3 <- paste0("DBA.", out.dir, '.', method, ".FDR0.05.report.xls")
     file.pdf <- paste0("DBA.", out.dir, ".pdf")
     write.xls(dba.report1, file=file1)
     write.xls(dba.report2, file=file2)
@@ -295,10 +295,10 @@ run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, db
     pdf(file.pdf); n.clean <- 2
     dba.plotHeatmap(dba, method=method); #dba.plotVenn(dba)
     dba.plotMA(dba, method=method, th=0.1);
-    dba.plotMA(dba, bUsePval=TRUE, fold=2, method=method, th=0.1);
+    dba.plotMA(dba, bUsePval=TRUE, fold=2, method=method, th=0.01);
     dba.plotMA(dba, method=method, th=0.05);
     if(length(dba.report1)>0) dba.plotVolcano(dba, method=method, th=0.1)
-    if(length(dba.report2)>0) dba.plotVolcano(dba, bUsePval=TRUE, fold=2, method=method, th=0.1);
+    if(length(dba.report2)>0) dba.plotVolcano(dba, bUsePval=TRUE, fold=2, method=method, th=0.01);
     if(length(dba.report3)>0) dba.plotVolcano(dba, method=method, th=0.05)
     save(dba, dba.report1, dba.report2, dba.report3, file="DBA.RData")
     setwd(o.dir)

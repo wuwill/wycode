@@ -12,7 +12,7 @@ make_option(c("-G", "--group"), action = "store", default=NULL, help = "Group in
                     - 2 columns: sample name, sample group;
                     - 4 columns: sample key with additional 4th column for sample group.
                     Alternatively, use tab delimited file with header - name, group, fq1 (and/or) fq2. This allows using custom fastq files as input."),
-make_option(c("-C", "--contrast"), action = "store", default=NULL, help = "Contrast groups file. Default: 'contrast.txt' within the project directory.
+make_option(c("-C", "--contrast"), action = "store", default=NULL, help = "Contrast groups file. Default: 'contrasts.txt' within the project directory.
                     Tab delimited file with 2 columns: sample group, control group."),
 make_option(c("--notsubmit"), action = "store_true", default=FALSE, help = "When specified, creates script files without submitting jobs to SLURM."),
 make_option(c("-d", "--directory"), action = "store", default=NULL, help = "Work directory within '/scratch/gtac/analysis/chipseq'. Default: [run_lane_customer]."),
@@ -20,7 +20,7 @@ make_option(c("-p", "--postresults"), action = "store_true", default=FALSE, help
 make_option(c("-o", "--overwrite"), action = "store_true", default=FALSE, help = "- For posting resutls: when specified, overwrite posted result files."),
 make_option(c("-u", "--url"), action = "store", default=NULL, help = "- For posting resutls: GTAC_RUN_DATA URL. Defult: generate URL using HTCF 'serve'. Make sure to 'module load HTCF'.")
 )
-opt_parser <- OptionParser(usage = "%prog [options]\n\nExamples:\n%prog -r 1234_12 -c customer -g hg19 --notsubmit\n%prog -r 1234_12 -c customer -g hg19 --postresults\n\n>>> For more complex situations, make sure to specify sample groups and contrasting groups by creating samples.txt and contrast.txt within the project directory before running this command (see options below) !!!", option_list=option_list)
+opt_parser <- OptionParser(usage = "%prog [options]\n\nExamples:\n%prog -r 1234_12 -c customer -g hg19 --notsubmit\n%prog -r 1234_12 -c customer -g hg19 --postresults\n\n>>> For more complex situations, make sure to specify sample groups and contrasting groups by creating samples.txt and contrasts.txt within the project directory before running this command (see options below) !!!", option_list=option_list)
 opt <- parse_args(opt_parser)
 if(is.null(opt$run) && is.null(opt$directory)) {
     print_help(opt_parser)
