@@ -122,7 +122,7 @@ mv(idr), file="runDiffBind.sh")
 #sapply(seq_along(test.groups), mk.diffbind.job, idr=TRUE, intersect=TRUE)
 
 ### new way testing any regions
-# source find.file.R
+# source find.file.R / io.R
 get.atac.sampleSheet <- function(group, atac.dir, ...){ #{{{
     ret <- list()
     i <- match(group, atac.dir$group)
@@ -144,36 +144,6 @@ get.atac.sampleSheet <- function(group, atac.dir, ...){ #{{{
     }
     ret <- data.frame(SampleID=sampleID, Tissue="", Factor=group, Condition=group, Replicate=gsub("rep", "", samples),
                       bamReads=beds, bamControl=bedctl, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
-    return(ret)
-} #}}}
-get.atac2.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=FALSE){ #{{{
-    #peak.file: NULL - find for each sample; "optimal" optimal peaks; or self specified peaks
-    ret <- list()
-    i <- match(group, chip.dir$group)
-    path <- file.path(chip.dir$top.path[i], chip.dir$dir[i])
-    #samples <- list.files(file.path(path, "align"), "^rep")
-    #tagAligns <- sapply(file.path(path, "align", samples, "*tn5.tagAlign.gz"), Sys.glob)
-    if(useBam){ #{{{
-        tagAligns <- beds <- find.file(path, "*.nodup.bam", pattern2="filter/")
-        samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
-    } else {
-        tagAligns <- find.file(path, "*nodup.*tagAlign.gz", pattern2="bam2ta/")
-        samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
-        beds <- gsub("tagAlign.gz", "bed.gz", tagAligns)
-        file.symlink(tagAligns, beds)
-    }#}}}
-    if(is.null(peak.file)){ #{{{
-        peaks <- find.file(path, "*bfilt.narrowPeak.gz", pattern2="macs2/")
-    } else if(peak.file %in% c("optimal", "idr", "overlap")) {
-        peaks <- find.file(path, "*optimal*narrowPeak.gz", pattern2="/execution") 
-        if(length(peaks)>1) peaks <- grep(peak.file, peaks, value=TRUE)
-        #if(length(peaks)>1) peaks <- find.file(path, "*optimal*narrowPeak.gz", pattern2="idr")
-    } else {
-        peaks <- peak.file
-    } #}}}
-    sampleID <- paste0(group, "_", samples)
-    ret <- data.frame(SampleID=sampleID, Tissue="", Factor=group, Condition=group, Replicate=gsub("shard", "", samples),
-                      bamReads=beds, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
     return(ret)
 } #}}}
 get.chip2.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=FALSE){ #{{{
@@ -235,9 +205,96 @@ get.chip2.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=F
                       bamReads=beds, bamControl=bedctl, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
     return(ret)
 } #}}}
+my.grange.intersect <- function(x, y) { # interect of x and y while keeping meta data of x{{{
+    ret <- intersect(x, y)
+    ov <- as.data.frame(findOverlaps(ret, x))
+    mcols(ret) <- mcols(x)[ov[match(1:length(ret), ov[[1]]),2],,drop=FALSE]
+    return(ret)
+} #}}}
+get.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=TRUE, diffbind.workdir=NULL, atac=FALSE){ #{{{
+    #peak.file: NULL - find for each sample; "optimal"/"idr" optimal peaks; "idr.intersect" - peaks for each sample intersect with IDR ; or self specified peaks
+    ret <- list()
+    i <- match(group, chip.dir$group)
+    path <- file.path(chip.dir$top.path[i], chip.dir$dir[i])
+    #samples <- list.files(file.path(path, "align"), "^rep")
+    #tagAligns <- sapply(file.path(path, "align", samples, "*tn5.tagAlign.gz"), Sys.glob)
+    grep.peak.file <- function(..., exact=FALSE) { #{{{
+        patterns <- unlist(list(...))
+        if(length(peak.file) != 1) return(FALSE)
+        if(exact) peak.file %in% c(patterns, paste0(patterns, ".intersect")) else any(sapply(patterns, grepl, x=peak.file))
+    } #}}}
+    if(is.null(peak.file)){ #{{{
+        peaks <- find.file(path, "*bfilt.narrowPeak.gz", pattern2="macs2/")
+    } else if(grep.peak.file("optimal", "idr", "overlap", exact=TRUE)) {
+        idr <- find.file(path, "*optimal*narrowPeak.gz", pattern2="/execution") 
+        if(length(idr)>1) idr <- grep(gsub(".intersect", "", peak.file), idr, value=TRUE)
+        if(grep.peak.file("intersect$")) {
+            ####@@@
+            peaks0 <- find.file(path, "*bfilt.narrowPeak.gz", pattern2="macs2/")
+            peaks <- file.path(diffbind.workdir, gsub(".narrowPeak.gz", paste0(".", peak.file, ".narrowPeak.gz"), basename(peaks0)))
+            peak.idr <- import.narrowpeak(idr)
+            for(i in seq_along(peaks)) {
+                peaki <- import.narrowpeak(peaks0[i])
+                export.bed(my.grange.intersect(peaki, peak.idr), peaks[i])
+            }
+        } else {
+            peaks <- idr
+        }
+    } else {
+        peaks <- peak.file
+    } #}}}
+    if(useBam){ #{{{
+        tagAligns <- beds <- find.file(path, "*.nodup.bam", pattern2="filter/")
+        samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
+    } else {
+        tagAligns <- find.file(path, "*nodup.*tagAlign.gz", pattern2="bam2ta/")
+        samples <- sapply(strsplit(tagAligns, "/"), grep, pattern="^shard", value=TRUE)
+        beds <- gsub("tagAlign.gz", "bed.gz", tagAligns)
+        file.symlink(tagAligns, beds)
+    }#}}}
+    sampleID <- paste0(group, "_", samples)
+    if(atac) {
+        ret <- data.frame(SampleID=sampleID, Tissue="", Factor=group, Condition=group, Replicate=gsub("shard", "", samples),
+                          bamReads=beds, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
+
+    } else {
+        if(useBam) {  #  {{{
+            pooled.bam <- find.file(path, "pooled.merged.nodup.bam", pattern2="filter_ctl")
+            all.bams <- find.file(path, "*nodup.bam", pattern2="filter_ctl")
+            n.bams <- length(all.bams)
+            if(length(pooled.bam) == 0){
+                if(n.bams==0) {
+                    bedctl <- ctrl <- ""
+                } else if(n.bams==1) {
+                    bedctl <- all.bams
+                } else {
+                    library(Rsamtools)
+                    destBam <- gsub("call-filter_ctl/.*$", "call-filter_ctl/pooled.merged.nodup.bam", all.bams[1])
+                    mergeBam(all.bams, destBam)
+                    indexBam(destBam)
+                    bedctl <- destBam
+                }
+            } else {
+                bedctl <- pooled.bam
+            } #}}}
+        }  else { #  {{{
+            ctrl.tagAligns <- find.file(path, "*nodup.pooled.tagAlign.gz", pattern2="pool_ta_ctl")
+            if(length(ctrl.tagAligns)==0) {
+                bedctl <- ctrl <- ""
+            } else {
+                ctrl <- paste0("ctrl.", sapply(strsplit(ctrl.tagAligns, "/"), grep, pattern="^shard", value=TRUE))
+                bedctl <- gsub("tagAlign.gz", "bed.gz", ctrl.tagAligns)
+                file.symlink(ctrl.tagAligns, bedctl)
+            }
+        } #}}}
+        ret <- data.frame(SampleID=sampleID, Tissue="", Factor=group, Condition=group, Replicate=gsub("shard", "", samples),
+                          bamReads=beds, bamControl=bedctl, Peaks=peaks, PeakCaller="macs", stringsAsFactors=FALSE)
+    }
+    return(ret)
+} #}}}
 library(DiffBind)
 run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, dba=NULL, useBam=FALSE, out.dir=NULL, sampleSheet=NULL,
-                         method=DBA_EDGER, bTagwise=FALSE, ...){ #{{{
+                         method=DBA_EDGER, bTagwise=FALSE, useCtl=TRUE, bUseSummarizeOverlaps=FALSE, ...){ #{{{
     n.clean <- 0
     if(is.null(out.dir)) out.dir <- paste0("DBA.", group1, "-", group2)
     if(!file.exists(out.dir)) dir.create(out.dir)
@@ -250,17 +307,15 @@ run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, db
     if(is.null(dba)){ #{{{
         if(is.null(sampleSheet)) {
             get.sampleSheet <- if(atac){ #{{{
-                if(group1.dir$top.path %in% new.pipe.list) get.atac2.sampleSheet else get.atac.sampleSheet
+                if(group1.dir$top.path %in% new.pipe.list) get.sampleSheet else get.atac.sampleSheet
             } else {
-                if(group1.dir$top.path %in% new.pipe.list) get.chip2.sampleSheet else get.chip.sampleSheet
+                if(group1.dir$top.path %in% new.pipe.list) get.sampleSheet else get.chip.sampleSheet
             } #}}}
-            sampleSheet <- if(atac) rbind(get.sampleSheet(group1, atac.dir, peak.file=peak.file, useBam=useBam),
-                                          get.sampleSheet(group2, atac.dir, peak.file=peak.file, useBam=useBam)) else
-                rbind(get.sampleSheet(group1, atac.dir, peak.file=peak.file, useBam=useBam),
-                      get.sampleSheet(group2, atac.dir, peak.file=peak.file, useBam=useBam))
+            sampleSheet <- rbind(get.sampleSheet(group1, atac.dir, peak.file=peak.file, useBam=useBam, atac=atac, diffbind.workdir=getwd()),
+                                          get.sampleSheet(group2, atac.dir, peak.file=peak.file, useBam=useBam, atac=atac, diffbind.workdir=getwd()))
             rownames(sampleSheet) <- NULL
             if(min(table(sampleSheet$Condition))<2) {
-                cat("XXX: only 1 sample in some groups!\n")
+                cat("Warning: only 1 sample in some groups!\n")
                 print(sampleSheet)
                 return()
             }
@@ -269,9 +324,13 @@ run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, db
             library(data.table)
             sampleSheet <- data.frame(fread(sampleSheet, ...))
         }
+        if(!useCtl) {
+            cat("Set bamControl to NULL!\n")
+            sampleSheet$bamControl <- NULL
+        }
         dba <- dba(sampleSheet=sampleSheet)
         #dba <- dba.count(dba, summits=250, bUseSummarizeOverlaps=TRUE)
-        dba <- if(useBam) dba.count(dba, bUseSummarizeOverlaps=TRUE) else dba.count(dba, summits=250) 
+        dba <- if(useBam) dba.count(dba, bUseSummarizeOverlaps=bUseSummarizeOverlaps) else dba.count(dba, summits=250) 
         dba <- dba.contrast(dba, categories=DBA_CONDITION, minMembers=2)
         dba <- dba.analyze(dba, method=method, bTagwise=bTagwise, bSubControl=TRUE, ...)
 		 #analysis = dba.analyze(contrast, method=METHOD, bCorPlot=F, bTagwise=F, bSubControl=T)
@@ -285,6 +344,7 @@ run.DiffBind <- function(group1, group2, atac.dir, peak.file=NULL, atac=TRUE, db
     dba.report1 <- my.dba.report(dba, th=0.1)
     dba.report2 <- my.dba.report(dba, th=0.01, bUsePval=TRUE, fold=2)
     dba.report3 <- my.dba.report(dba, th=0.05)
+    out.dir <- basename(out.dir)
     file1 <- paste0("DBA.", out.dir, '.', method, ".FDR0.1.report.xls")
     file2 <- paste0("DBA.", out.dir, '.', method, ".p0.01.Fold2.report.xls")
     file3 <- paste0("DBA.", out.dir, '.', method, ".FDR0.05.report.xls")
