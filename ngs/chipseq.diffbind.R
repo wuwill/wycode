@@ -211,7 +211,7 @@ my.grange.intersect <- function(x, y) { # interect of x and y while keeping meta
     mcols(ret) <- mcols(x)[ov[match(1:length(ret), ov[[1]]),2],,drop=FALSE]
     return(ret)
 } #}}}
-get.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=TRUE, diffbind.workdir=NULL, atac=FALSE){ #{{{
+get.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=TRUE, diffbind.workdir=NULL, atac=FALSE, intersect.peak=NULL){ #{{{
     #peak.file: NULL - find for each sample; "optimal"/"idr" optimal peaks; "idr.intersect" - peaks for each sample intersect with IDR ; or self specified peaks
     ret <- list()
     i <- match(group, chip.dir$group)
@@ -225,11 +225,10 @@ get.sampleSheet <- function(group, chip.dir, peak.file="optimal", useBam=TRUE, d
     } #}}}
     if(is.null(peak.file)){ #{{{
         peaks <- find.file(path, "*bfilt.narrowPeak.gz", pattern2="macs2/")
-    } else if(grep.peak.file("optimal", "idr", "overlap", exact=TRUE)) {
-        idr <- find.file(path, "*optimal*narrowPeak.gz", pattern2="/execution") 
+    } else if(grep.peak.file("optimal", "idr", "overlap", exact=TRUE) || !is.null(intersect.peak)) {
+        idr <- if(is.null(intersect.peak)) find.file(path, "*optimal*narrowPeak.gz", pattern2="/execution")  else intersect.peak
         if(length(idr)>1) idr <- grep(gsub(".intersect", "", peak.file), idr, value=TRUE)
         if(grep.peak.file("intersect$")) {
-            ####@@@
             peaks0 <- find.file(path, "*bfilt.narrowPeak.gz", pattern2="macs2/")
             peaks <- file.path(diffbind.workdir, gsub(".narrowPeak.gz", paste0(".", peak.file, ".narrowPeak.gz"), basename(peaks0)))
             peak.idr <- import.narrowpeak(idr)

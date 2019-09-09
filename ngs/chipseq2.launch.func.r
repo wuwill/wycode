@@ -289,15 +289,22 @@ tabixBed <- function(bed, out=paste0(bed, ".gz"), run=FALSE) { #{{{
 } #}}}
 createEpic2SlurmSh <- function(chip.dir, genome="hg19", submit=FALSE){ #{{{
     chip.dir <- normalizePath(chip.dir)
-    work.dir <- dirname(find.file(chip.dir, "call-macs2_pooled"))
+    work.dir <- dirname(find.file(chip.dir, "call-macs2"))
     if(length(work.dir)==0 || work.dir=="") {
         cat("Run chipseq2 pipeline before running epic2 for", chip.dir, "\n")
         return()
     }
-    ppr1.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_pr1/execution/*.pooled.tagAlign.gz"))
-    ppr2.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_pr1/execution/*.pooled.tagAlign.gz"))
-    ctl.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_ctl/execution/*.pooled.tagAlign.gz"))
-    pooled.ta <- Sys.glob(file.path(work.dir, "call-pool_ta/execution/*.pooled.tagAlign.gz"))
+    if(length(find.file(chip.dir, "call-pool_ta"))>0) {
+        ppr1.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_pr1/execution/*.pooled.tagAlign.gz"))
+        ppr2.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_pr2/execution/*.pooled.tagAlign.gz"))
+        ctl.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_ctl/execution/*.pooled.tagAlign.gz"))
+        pooled.ta <- Sys.glob(file.path(work.dir, "call-pool_ta/execution/*.pooled.tagAlign.gz"))
+    } else {
+        ppr1.ta <- Sys.glob(file.path(work.dir, "call-*/execution/*.pr1.tagAlign.gz"))
+        ppr2.ta <- Sys.glob(file.path(work.dir, "call-*/execution/*.pr2.tagAlign.gz"))
+        ctl.ta <- Sys.glob(file.path(work.dir, "call-pool_ta_ctl/execution/*.tagAlign.gz"))
+        pooled.ta <- Sys.glob(file.path(work.dir, "call-bam2ta/shard-0/execution/*.tagAlign.gz"))
+    }
     sub.jobs <- list("call-macs2_ppr1"=c(ppr1.ta, ctl.ta),
                      "call-macs2_ppr2"=c(ppr2.ta, ctl.ta),
                      "call-macs2_pooled"=c(pooled.ta, ctl.ta))

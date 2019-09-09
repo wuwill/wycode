@@ -228,7 +228,7 @@ my.annotatePeak <- function(peaks, tssRegion=c(-3000, 3000), pdf.file="", ...) {
 } #}}}
 peakPathway <- function(peakAnno,
                         pdf.file="",
-                        tssRegion=c(-1000, 1000),
+                        tssRegion=c(-1000, 1000), flankDistance=3000,
                         #fun=c("enrichPathway", "enrichKEGG"),
                         organism = "hsa",  # kegg organism
                         showCategory=15, title="Pathway Enrichment Analysis"){ #{{{
@@ -268,9 +268,9 @@ peakPathway <- function(peakAnno,
 
         if(!is.null(pdf.file) && pdf.file!=""){ #{{{
             pdf(pdf.file); on.exit(dev.off())
-            print(dotplot(ret$GO_BP, showCategory=showCategory, title = paste0(title, " - GO_BP")))
-            print(dotplot(ret$GO_MF, showCategory=showCategory, title = paste0(title, " - GO_MF")))
-            print(dotplot(ret$KEGG, showCategory=showCategory, title = paste0(title, " - KEGG")))
+            try(print(dotplot(ret$GO_BP, showCategory=showCategory, title = paste0(title, " - GO_BP"))))
+            try(print(dotplot(ret$GO_MF, showCategory=showCategory, title = paste0(title, " - GO_MF"))))
+            true(print(dotplot(ret$KEGG, showCategory=showCategory, title = paste0(title, " - KEGG"))))
         } #}}}
 
         return(ret)
@@ -304,25 +304,26 @@ peakPathway <- function(peakAnno,
 
     if(!is.null(pdf.file) && pdf.file!=""){ #{{{
         pdf(pdf.file); on.exit(dev.off())
-        print(dotplot(ret$GO_BP, showCategory=showCategory, title = paste0(title, " - GO_BP")))
-        print(dotplot(ret$GO_MF, showCategory=showCategory, title = paste0(title, " - GO_MF")))
-        print(dotplot(ret$KEGG, showCategory=showCategory, title = paste0(title, " - KEGG")))
+        try(print(dotplot(ret$GO_BP, showCategory=showCategory, title = paste0(title, " - GO_BP"))))
+        try(print(dotplot(ret$GO_MF, showCategory=showCategory, title = paste0(title, " - GO_MF"))))
+        try(print(dotplot(ret$KEGG, showCategory=showCategory, title = paste0(title, " - KEGG"))))
     } #}}}
 
     return(ret)
 } #}}}
-peak2gene <- function(peakAnno, tssRegion=c(-1000, 1000), organism = "hsa"){  # kegg organism #{{{
+peak2gene <- function(peakAnno, tssRegion=c(-1000, 1000), flankDistance=3000,  organism = "hsa"){  # kegg organism #{{{
     if(is.list(peakAnno)){ #{{{
         genes = lapply(peakAnno, function(i) as.data.frame(i)$geneId)
         if(is.null(genes[[1]]))
-            genes = lapply(peakAnno, function(i) seq2gene(i, tssRegion=tssRegion, flankDistance=3000, TxDb=TxDb))
+            genes = lapply(peakAnno, function(i) seq2gene(i, tssRegion=tssRegion, flankDistance=flankDistance, TxDb=TxDb))
         return(genes)
     } #}}}
 
     # if peakAnno is not a list
     gene <- as.data.frame(peakAnno)$geneID
-    if(is.null(gene)) gene <- seq2gene(peakAnno, tssRegion = tssRegion, flankDistance = 3000, TxDb=TxDb)
+    if(is.null(gene)) gene <- seq2gene(peakAnno, tssRegion = tssRegion, flankDistance = flankDistance, TxDb=TxDb)
     return(gene)
 
 } #}}}
+TSS_ <- promoters(geneAnn, 0, 1); names(TSS_) <- TSS_$symbol
 

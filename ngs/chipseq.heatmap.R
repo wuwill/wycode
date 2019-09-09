@@ -149,6 +149,31 @@ read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, ..., atac
     } #}}}
     return(signal)
 } #}}}
+read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, fun=function(x) x, ..., atac=TRUE, bigwig=NULL){ #{{{
+    if(is.null(bigwig)) bigwig <- get.file(group, "bw", atac=atac)
+    bp1 <- if(is.null(bp)) 0 else bp
+    signal <- if(is.null(peaks)) signal <- import(bigwig, format="BigWig", as="Rle") else
+        import(bigwig, selection=BigWigSelection(peaks+bp1), format="BigWig", as="Rle")
+    if(!is.null(peaks)){
+        if(!is.null(bp)){ #{{{
+            peaks <- resize(peaks, width=bp*2+1, fix="center")
+            pad <- Rle(0, max(end(peaks)))
+            pad.left <- Rle(0, bp)
+            for(chr in seqlevels(signal)){ #{{{
+                signal[[chr]] <- c(pad.left, signal[[chr]], pad)
+            } #}}}
+            signal <- signal[GenomicRanges::shift(peaks, bp)]
+        } else {
+            signal <- signal[peaks]
+        } #}}}
+    }
+    #names(signal) <- group
+    signal <- sapply(signal, function(x) fun(as.vector(x)))
+    if(aggregate){ #{{{
+        return(apply(signal, 1, mean))
+    } #}}}
+    return(signal)
+} #}}}
 my.mk.signal.histgram <- function(aggregated.signal, col=NULL, ...){ #{{{
     if(is.list(aggregated.signal)) aggregated.signal <- sapply(aggregated.signal, I)
     nbp <- (nrow(aggregated.signal) - 1)/2
