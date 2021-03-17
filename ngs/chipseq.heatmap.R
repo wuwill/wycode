@@ -114,7 +114,7 @@ my.mk.signal.histgram <- function(aggregated.signal, file="", i.sel=1:ncol(aggre
         pdf(file)
         on.exit(dev.off())
     } #}}}
-    cls10 <- alpha(brewer.pal(10, 'Set1'), 0.6)
+    cls10 <- ggplot2::alpha(RColorBrewer::brewer.pal(10, 'Set1'), 0.6)
     aggregated.signal <- signal.convert(aggregated.signal[,i.sel,drop=FALSE])
     nbp <- (nrow(aggregated.signal) - 1)/2
     n <- ncol(aggregated.signal)
@@ -128,11 +128,12 @@ my.mk.signal.histgram <- function(aggregated.signal, file="", i.sel=1:ncol(aggre
 } #}}}
 
 # new versions of functions
-get.heat.mat <- function(group, peaks, bp=500, ..., atac=TRUE){ #{{{
+cls10 <- ggplot2::alpha(RColorBrewer::brewer.pal(10, 'Set1'), 0.6)
+get.heat.mat <- function(group, peaks, bp=500, ..., atac=TRUE, bigwig = NULL){ #{{{
     peaks <- resize(peaks, width=1, fix="center")
-    bigwig <- get.file(group, "bw", ..., atac=atac)
+    if(is.null(bigwig)) bigwig <- get.file(group, "bw", ..., atac=atac)
     signal <- import(bigwig, selection=BigWigSelection(peaks+bp), format="BigWig")
-    mat1 <- normalizeToMatrix(signal, peaks, value_column="score", extend=bp, mean_mode="w0")
+    mat1 <- normalizeToMatrix(signal, peaks, value_column="score", extend=bp, mean_mode="w0", ...)
     return(mat1)
 } #}}}
 read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, ..., atac=TRUE){ #{{{
@@ -174,14 +175,14 @@ read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, fun=funct
     } #}}}
     return(signal)
 } #}}}
-my.mk.signal.histgram <- function(aggregated.signal, col=NULL, ...){ #{{{
+my.mk.signal.histgram <- function(aggregated.signal, col=NULL, main = "", ...){ #{{{
     if(is.list(aggregated.signal)) aggregated.signal <- sapply(aggregated.signal, I)
     nbp <- (nrow(aggregated.signal) - 1)/2
     n <- ncol(aggregated.signal)
     if(is.null(col)) col <- cls10[1:n]
-    matplot(x=-nbp:nbp, aggregated.signal, xlab='', ylab='', type='l', col=col, lty=1, lwd=3, main="", ...)
+    matplot(x=-nbp:nbp, aggregated.signal, xlab='', ylab='', type='l', col=col, lty=1, lwd=3, main=main, ...)
     legend('topright', legend=colnames(aggregated.signal), col=col, lty=1, lwd=3, cex=0.8, border=0)
-    matplot(x=-nbp:nbp, aggregated.signal, xlab='', ylab='', type='l', col=col, lty=1, lwd=3, main="", ...)
+    matplot(x=-nbp:nbp, aggregated.signal, xlab='', ylab='', type='l', col=col, lty=1, lwd=3, main=main, ...)
 } #}}}
 do.heatmaps.combined <- function(group.list, col.list, atac.list, peaks, task.name, orderBy=c(1, 1), orderrByDiff=FALSE, heat.mat.list=NULL){ #{{{
     generate.heat.mats <- function(groups, atac=TRUE){ #{{{

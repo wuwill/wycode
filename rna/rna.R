@@ -2,6 +2,41 @@ library(Hmisc)
 library(readxl)
 library(heatmap3)
 options(bitmapType="cairo")
+get_colors <- function(groups, legend = FALSE) {#  {{{
+
+#Custom Color Palettes#
+	color.pals <- list(
+		g1qualitative=c("#4477AA"),
+		g2qualitative=c("#4477AA", "#CC6677"),
+		g3qualitative=c("#4477AA", "#DDCC77", "#CC6677"),
+		g4qualitative=c("#4477AA", "#117733", "#DDCC77", "#CC6677"),
+		g5qualitative=c("#332288", "#88CCEE", "#117733", "#DDCC77", "#CC6677"),
+		g6qualitative=c("#332288", "#88CCEE", "#117733", "#DDCC77", "#CC6677","#AA4499"),
+		g7qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#DDCC77", "#CC6677","#AA4499"),
+		g8qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677","#AA4499"),
+		g9qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677", "#882255", "#AA4499"),
+		g10qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#882255", "#AA4499"),
+		g11qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#882255", "#AA4499"),
+		g12qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#AA4466", "#882255", "#AA4499"),
+		g13qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#AA4466", "#882255", "#AA4499", "#771122"),
+		g14rainbow=c("#882E72", "#B178A6", "#D6C1DE", "#1965B0", "#5289C7", "#7BAFDE", "#4EB265", "#90C987", "#CAE0AB", "#F7EE55", "#F6C141", "#F1932D", "#E8601C", "#DC050C"),
+		g15rainbow=c("#114477", "#4477AA", "#77AADD", "#117755", "#44AA88", "#99CCBB", "#777711", "#AAAA44", "#DDDD77", "#771111", "#AA4444", "#DD7777", "#771144", "#AA4477", "#DD77AA")
+		#g18rainbow=c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC", "#777711", "#AAAA44", "#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788")
+		#g21rainbow= c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC", "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44", "#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788")
+	 )
+  	 groups <- as.factor(groups)
+  	 ngrps <- length(levels(groups))
+	 group.col <- color.pals[[ngrps]]
+    	 group.col <- rep(group.col, ngrps)
+  	 color <- group.col[as.numeric(groups)]
+  	 names(color) <- as.vector(groups)
+	
+	 if (legend == "TRUE") {
+	   return(group.col)
+	 } else {
+  	   return(color)
+	 }
+} #}}}
 venn4de <- function(groups, file, project.dir="."){ # read signficant DE resutls and make Venn Diagram {{{
     o.dir <- setwd(project.dir); on.exit(setwd(o.dir))
     get.sig <- function(group){ #{{{
@@ -106,12 +141,12 @@ my.plot.heatmap.pair <- function(group.pair, project.dir=".", genes=NULL, suffix
     #plotHeatmap(d, genes, paste0(file.name, ".heatmap"), groups)
     plotHeatmap(d[,i], genes, paste0(file.name, ".byGroup.heatmap"), groups[i], Colv=Colv)
 }#}}}
-get.diff <- function(group, project.dir="."){ #{{{
+get.diff <- function(group, project.dir=".", suffix=c('tsv', "xls")){ #{{{
     if(project.dir!=".") {
-        o.dir <- setwd(project.dir); on.exit(o.dir)
+        o.dir <- setwd(project.dir); on.exit(setwd(o.dir))
     }
     library(readr)
-    ret.file <- Sys.glob(file.path(group, "*_Differential_Expression.xls"))
+    ret.file <- Sys.glob(paste0(group, "/*_Differential_Expression.", suffix))
     ret <- read_tsv(ret.file)
     return(as.data.frame(ret))
 } #}}}
@@ -138,9 +173,10 @@ plot_MA <- function(DIFF, results_name, highlight_genes=NULL, alpha=0.6) { #{{{
         png(png0, height=600, width=600); print(p); dev.off()
     } #}}}
 } #}}}
-plot_Volcano <- function(x, results_name, highlight_genes=NULL, alpha=0.6) {#  {{{
+plot_Volcano <- function(x, results_name, highlight_genes=NULL, alpha=0.6, i_significant=NULL) {#  {{{
 	require(ggplot2)
     x$log10p <- -log10(x$P.Value)
+    if(is.null(i_significant)) i_significant <- x$adj.P.Val <= 0.05
     DIFF <- x
 	xlimit <- max(c(max(x$logFC), abs(min(x$logFC))))
     png0 <- paste(results_name, "Volcano_plot.png", sep="_")
@@ -180,4 +216,126 @@ get.gene_count <- function(key.file, ann.file="all.gene_counts.tsv", top.dir="."
                     })
     colnames(ret) <- key$name
     return(cbind(anno, ret))
+}#}}}
+
+# pathway
+get_msigdbr_dt <- function(species, pathway_types = c("GO_BP", "GO_MF", "KEGG")) {#{{{
+    library(msigdbr)
+    library(clusterProfiler)
+    species_map <- c("mouse" = "Mus musculus",
+                     "human" = "Homo sapiens",
+                     "fly" = "Drosophila melanogaster",
+                     "rat" =  "Rattus norvegicus")
+    species <- plyr::mapvalues(species, names(species_map), species_map, warn_missing = FALSE)
+    # msigdbr_show_species() # c("Bos taurus", "Caenorhabditis elegans", "Canis lupus familiaris", "Danio rerio", "Drosophila melanogaster", "Gallus gallus", "Homo sapiens", "Mus musculus", "Rattus norvegicus", "Saccharomyces cerevisiae", "Sus scrofa")
+
+    find_category <- function(pathway_type) {#{{{
+        if(pathway_type == "KEGG") return(c("C2", "CP:KEGG"))
+        res <- stringr::str_split(pathway_type, "_")[[1]]
+        if(res[1] == "GO") res[1] <- "C5"
+        return(res)
+    }#}}}
+
+    res <- list()
+    for(pathway_type in pathway_types) {#{{{
+        category <- find_category(pathway_type)
+        if(length(category) == 1) {#{{{
+            category <- category[1]
+            subcategory <- NULL
+        } else {
+            subcategory <- category[2]
+            category <- category[1]
+        }#}}}
+        subcategory <- if(length(category))
+        res[[pathway_type]] <- msigdbr(species = species,
+                                       category = category,
+                                       subcategory = subcategory)
+    }#}}}
+    
+    if(length(pathway_types) == 1) return(res[[1]]) else return(res)
+}#}}}
+subset_enrichResult = function(x, i) { #  {{{
+    rownames(x@result) = x@result$ID
+
+    x@result = x@result[i, , drop = FALSE]
+
+    x@geneSets = x@geneSets[x@result$ID]
+    return(x)
+} #}}}
+clusterProfiler_enricher <- function(input, gene_col = "", gene_type = "ENTREZID", species = "mouse", file_prefix = "enricher") {# over representation analysis {{{
+    # input: a data frame of DGE analysis results with these columns
+    #       - gene
+    library(ggplot2)
+    library(dplyr)
+    library(clusterProfiler)
+
+    pathway_dt <- get_msigdbr_dt(species)
+    mk_fn <- function(pathway_name="", ...) {#{{{
+        res <- paste0(file_prefix, ".", pathway_name, "/", basename(file_prefix), ".", pathway_name, ...)
+        if(!file.exists(dirname(res))) dir.create(dirname(res), recursive = TRUE)
+        return(res)
+    }#}}}
+    # load orgdb {{{
+    if(tolower(species) %in% c("mouse", "mus musculus")) {
+        library(org.Mm.eg.db)
+        orgdb <- org.Mm.eg.db
+    }
+    if(tolower(species) %in% c("human", "homo sapiens")) {
+        library(org.Hs.eg.db)
+        orgdb <- org.Hs.eg.db
+    }
+    if(tolower(species) %in% c("rat", "rattus norvegicus")) {
+        library(org.Rn.eg.db)
+        orgdb <- org.Rn.eg.db
+    }
+    if(tolower(species) %in% c("fly", "drosophila melanogaster")) {
+        library(org.Dm.eg.db)
+        orgdb <- org.Dm.eg.db
+    }
+    #}}}
+    # convert input to ENTREZID vector {{{
+    if(!is.null(gene_col) || ! gene_col %in% c(NA, ""))
+        input <- input[[gene_col]]
+    if(!tolower(gene_type) %in% c("", "entrezid", "entrez", "entrezgene"))
+        input <- bitr(input, fromType = gene_type, toType = "ENTREZID", OrgDb = orgdb)
+    #}}}
+    test_ <- function(input, db, pathway_type) {#{{{
+        db <- db[, c('gs_name', "entrez_gene")]
+        res <- enricher(input, TERM2GENE = db, pvalueCutoff = 1, qvalueCutoff = 1)
+        if(is.null(res)) return(NULL)
+        res <- setReadable(res, orgdb, keyType = "ENTREZID")
+        write_tsv(as.data.frame(res), mk_fn(pathway_type, "over_representation_test.tsv"))
+        try_plot_top_fdr <- function(res, fdr=0.05) {#{{{
+            if(is.null(fdr) || is.na(fdr)) {#{{{
+                res <- if(nrow(res) > 20) subset_enrichResult(res, 1:20) else res
+                name1 <- "top20_pathways"
+                name2 <- "Top 20 pathways"
+            } else {
+                res <- subset_enrichResult(res, res@result$qvalue <= fdr)
+                name1 <- paste0("pathway_significant_at_FDR", fdr)
+                name2 <- paste0("FDR <= ", fdr)
+            }#}}}
+            n <- nrow(res)
+            name <-
+            if(n>1 && n <= 40) {
+                p <- dotplot(res, showCategory = n, font.size = 9) + ggtitle(name2)
+                ggsave(mk_fn(pathway_type, name1, ".dotplot.pdf"),
+                       p,
+                       width = 8,
+                       height = max(8, round(0.8 * n) / 2))
+            }
+        }#}}}
+        for(fdr in c(NA, 0.01, 0.05, 0.1, 0.2)) try_plot_top_fdr(res, fdr)
+        return(res)
+    }#}}}
+
+    if(is.data.frame(pathway_dt[[1]])) {
+        res <- list()
+        for(pathway_type in names(pathway_dt)) 
+            res[[pathway_type]] <- test_(input, pathway_dt[[pathway_type]], pathway_type)
+    } else {
+        res <- test_(input, pathway_dt, pathway_type)
+    }
+
+    return(res)
 }#}}}

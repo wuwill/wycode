@@ -92,6 +92,7 @@ my.homer1liner <- function(peak, file, out.dir=file, rm.dup=TRUE, genome=NULL){ 
     bed.file <- paste0(file, ".peak4homer.txt")
     write.peak4homer(peak, file=bed.file, rm.dup=rm.dup)
     if(!file.exists(out.dir)) dir.create(out.dir)
+    out.dir <- normalizePath(out.dir)
     my.homer(bed.file, out.dir, run=TRUE, genome=genome)
     find.peak.for.motif(bed.file, out.dir, run=TRUE, genome=genome)
 } #}}}

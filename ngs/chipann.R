@@ -2,8 +2,15 @@ library(GenomicFeatures)
 library(ChIPpeakAnno)
 library(ChIPseeker)
 #GENOME <- "h19"
+# GTF
+getGeneAnn <- function(TxDb, orgAnn=NULL){ # used to generate geneAnn for new species; hg and mm geneAnn already genereated and saved in /scatch/ref {{{
+    annoData <- genes(TxDb)
+    annoData$feature <- annoData$gene_id
+    if(!is.nul(orgAnn)) annoData <- addGeneIDs(annoData, orgAnn=orgAnn, feature_id_type='entrez_id', IDs2Add='symbol')
+    return(annoData)
+} #}}}
 REF_DIR <- if(file.exists("/scratch/ref")) "/scratch/ref/gtac/reference_sequences" else "~/local"
-if(exists("GENOME")){ #{{{
+if(exists("GENOME") && !is.null(GENOME)){ #{{{
     if(GENOME == "hg19") {
         library(org.Hs.eg.db)
         library(TxDb.Hsapiens.UCSC.hg19.knownGene)
@@ -17,7 +24,7 @@ if(exists("GENOME")){ #{{{
         TxDb <- TxDb.Hsapiens.UCSC.hg18.knownGene
         orgAnn <- "org.Hs.eg.db"
         load(file.path(REF_DIR, "chipseq_pipeline_genome_data/hg19.geneAnn.RData"))
-        save(geneAnn, file=file.path(REF_DIR, "chipseq_pipeline_genome_data/hg18.geneAnn.RData"))
+        #save(geneAnn, file=file.path(REF_DIR, "chipseq_pipeline_genome_data/hg18.geneAnn.RData"))
     }
     if(GENOME == "mm10"){
         library(org.Mm.eg.db)
@@ -34,11 +41,11 @@ if(exists("GENOME")){ #{{{
         load(file.path(REF_DIR, "chipseq_pipeline_genome_data/mm9.geneAnn.RData"))
     }
 } #}}}
-getGeneAnn <- function(){ # used to generate geneAnn for new species; hg and mm geneAnn already genereated and saved in /scatch/ref {{{
-    annoData <- genes(TxDb)
-    annoData$feature <- annoData$gene_id
-    annoData <- addGeneIDs(annoData, orgAnn=orgAnn, feature_id_type='entrez_id', IDs2Add='symbol')
-    return(annoData)
+if(exists("GTF")) { #{{{
+    if(!is.null(gtf)) {
+        TxDb <- gtf2TxDb(gtf)
+        geneAnn <- getGeneAnn(TxDb, NULL)
+    }
 } #}}}
 annotateByRegion <- function(){ #{{{
     annoData <- genes(TxDb)
@@ -196,8 +203,13 @@ relevel.csAnno <- function(anno){ #{{{
         lapply(anno, relevel.csAnno)
     }
 } #}}}
-my.annotatePeak <- function(peaks, tssRegion=c(-3000, 3000), pdf.file="", ...) { #{{{
+my.annotatePeak <- function(peaks, tssRegion=c(-3000, 3000), pdf.file="", TxDb=NULL, orgAnn=NULL, ...) { #{{{
     #https://guangchuangyu.github.io/2014/04/visualization-methods-in-chipseeker/
+    if(is.character(peaks[1])) peaks <- if(length(peaks)>1) lapply(peaks, import.narrowpeak) else import.narrowpeak(peaks)
+    #if(is.null(TxDb) && exists("TxDb", env=parent.env())) {
+        #TxDb <- get("TxDb", env=parent.env())
+        #orgAnn <- get("orgAnn", env=parent.env())
+    #}
     if("GRanges" %in% class(peaks) || length(peaks)==1){ #{{{
         peakAnno <- annotatePeak(peaks, TxDb=TxDb, annoDb=orgAnn, tssRegion=tssRegion, ...)
     } else {
@@ -325,5 +337,7 @@ peak2gene <- function(peakAnno, tssRegion=c(-1000, 1000), flankDistance=3000,  o
     return(gene)
 
 } #}}}
-TSS_ <- promoters(geneAnn, 0, 1); names(TSS_) <- TSS_$symbol
+if(exists("geneAnn") && !is.null(geneAnn)){
+    TSS_ <- promoters(geneAnn, 0, 1); names(TSS_) <- TSS_$symbol
+}
 
