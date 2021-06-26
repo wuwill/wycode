@@ -283,8 +283,9 @@ getWuBrowserLink <- function(dest.dir, top.url=NULL, genome="hg19"){ #{{{
 
     return(url2)
 } #}}}
-getWuBrowserLink4bw <- function(bigwig, track.names=gsub(".fc.signal.b.*$", "", basename(bigwig)), json.file='', dest.dir, top.url=NULL, genome="hg19"){ #{{{
+getWuBrowserLink4bw <- function(bigwig, track.names=gsub(".fc.signal.b.*$", "", basename(bigwig)), json.file='', dest.dir, top.url=NULL, genome="hg19", v47 = FALSE, ymin = 2, ymax =40){ #{{{
     bigwig <- normalizePath(bigwig)
+    dest.dir <- normalizePath(dest.dir)
     json.file2 <- if(is.null(json.file) || json.file %in% c("", NA)) file.path(dest.dir, "pool_fc.json") else file.path(dest.dir, json.file)
     json.file <- gsub(".json", ".wubrowser.v47.json", json.file2)
     library(rjson)
@@ -301,35 +302,42 @@ getWuBrowserLink4bw <- function(bigwig, track.names=gsub(".fc.signal.b.*$", "", 
              name=track.names,
              url=gsub(dest.dir, top.url, bigwig, fix=TRUE),
              mode=1,
-             qtc=list(height=30, summeth=2, smooth=3, pr=255, pg=20, pb=147, thtype=1, thmin=2, thmax=40)
+             qtc=list(height=30, summeth=2, smooth=3, pr=255, pg=20, pb=147, thtype=1, thmin=ymin, thmax=ymax)
              ))
     } #}}}
-    get.track.json2 <- function(bigwig){ #{{{
-        name <- strsplit(gsub(paste0(dest.dir, "/"), "", bigwig), "/")[[1]][1]
+    get.track.json2 <- function(bigwig, track.names = NULL){ #{{{
+        name <- if(is.null(track.names)) 
+            strsplit(gsub(paste0(dest.dir, "/"), "", bigwig), "/")[[1]][1] else
+                track.names
         toJSON(list(type="bigwig",
              name=name,
              url=gsub(dest.dir, top.url, bigwig, fix=TRUE),
-             options=list(yScale="fixed", yMin=2, yMax=40),
+             options=list(yScale="fixed", yMin=ymin, yMax=ymax),
              showOnHubLoad = TRUE
              ))
     } #}}}
-    #json <- sapply(bigwig, get.track.json, )
-    json <- mapply(get.track.json, bigwig, track.names)
-    json <- c(json,
-              toJSON(list(type="native_track",
-                   list=list(list(name="refGene", mode="full"))
-                   ))
-              )
-    cat("[", paste(json, collapse=",\n"), "]", file=json.file, sep="\n")
-    url <- paste0("http://epigenomegateway.wustl.edu/browser/?genome=", genome, "&datahub=", gsub(dest.dir, top.url, json.file, fix=TRUE))
-    #cat(url, "\n")
 
-    json <- sapply(bigwig, get.track.json2)
-    cat("[", paste(json, collapse=",\n"), "]", file=json.file2, sep="\n")
-    url2 <- paste0("http://epigenomegateway.wustl.edu/browser/?genome=", genome, "&hub=", gsub(dest.dir, top.url, json.file2, fix=TRUE))
-    cat(url2)
+    if(v47) {#{{{
+        #json <- sapply(bigwig, get.track.json, )
+        json <- mapply(get.track.json, bigwig, track.names)
+        json <- c(json,
+                  toJSON(list(type="native_track",
+                              list=list(list(name="refGene", mode="full"))
+                              ))
+        )
+        cat("[", paste(json, collapse=",\n"), "]", file=json.file, sep="\n")
+        url <- paste0("http://epigenomegateway.wustl.edu/browser/?genome=", genome, "&datahub=", gsub(dest.dir, top.url, json.file, fix=TRUE))
+        return(url)
+        #cat(url, "\n")
+    } else {
 
-    return(url2)
+        json <- mapply(get.track.json2, bigwig, track.names)
+        cat("[", paste(json, collapse=",\n"), "]", file=json.file2, sep="\n")
+        url2 <- paste0("http://epigenomegateway.wustl.edu/browser/?genome=", genome, "&hub=", gsub(dest.dir, top.url, json.file2, fix=TRUE))
+        cat(url2, "\n")
+        return(url2)
+    }#}}}
+
 } #}}}
 
 ### epic2

@@ -128,7 +128,7 @@ my.mk.signal.histgram <- function(aggregated.signal, file="", i.sel=1:ncol(aggre
 } #}}}
 
 # new versions of functions
-cls10 <- ggplot2::alpha(RColorBrewer::brewer.pal(10, 'Set1'), 0.6)
+cls10 <- ggplot2::alpha(RColorBrewer::brewer.pal(9, 'Set1'), 0.6)
 get.heat.mat <- function(group, peaks, bp=500, ..., atac=TRUE, bigwig = NULL){ #{{{
     peaks <- resize(peaks, width=1, fix="center")
     if(is.null(bigwig)) bigwig <- get.file(group, "bw", ..., atac=atac)
@@ -156,6 +156,7 @@ read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, fun=funct
     signal <- if(is.null(peaks)) signal <- import(bigwig, format="BigWig", as="Rle") else
         import(bigwig, selection=BigWigSelection(peaks+bp1), format="BigWig", as="Rle")
     if(!is.null(peaks)){
+        peaks <- keepSeqlevels(peaks, intersect(names(signal), seqlevels(peaks)), pruning.mode = "coarse")
         if(!is.null(bp)){ #{{{
             peaks <- resize(peaks, width=bp*2+1, fix="center")
             pad <- Rle(0, max(end(peaks)))
@@ -167,6 +168,7 @@ read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, fun=funct
         } else {
             signal <- signal[peaks]
         } #}}}
+        names(signal) <- names(peaks)
     }
     #names(signal) <- group
     signal <- sapply(signal, function(x) fun(as.vector(x)))
@@ -175,11 +177,12 @@ read.bigwig2rle <- function(group, peaks=NULL, bp=500, aggregate=TRUE, fun=funct
     } #}}}
     return(signal)
 } #}}}
-my.mk.signal.histgram <- function(aggregated.signal, col=NULL, main = "", ...){ #{{{
+my.mk.signal.histgram <- function(aggregated.signal, col=NULL, main = "", ..., n_col = NULL){ #{{{
     if(is.list(aggregated.signal)) aggregated.signal <- sapply(aggregated.signal, I)
     nbp <- (nrow(aggregated.signal) - 1)/2
     n <- ncol(aggregated.signal)
-    if(is.null(col)) col <- cls10[1:n]
+    if(is.null(n_col)) n_col <- n
+    if(is.null(col)) col <- if(n<=9) cls10[1:n] else colorspace::rainbow_hcl(n_col)[1:n]
     matplot(x=-nbp:nbp, aggregated.signal, xlab='', ylab='', type='l', col=col, lty=1, lwd=3, main=main, ...)
     legend('topright', legend=colnames(aggregated.signal), col=col, lty=1, lwd=3, cex=0.8, border=0)
     matplot(x=-nbp:nbp, aggregated.signal, xlab='', ylab='', type='l', col=col, lty=1, lwd=3, main=main, ...)

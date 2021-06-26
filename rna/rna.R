@@ -173,33 +173,97 @@ plot_MA <- function(DIFF, results_name, highlight_genes=NULL, alpha=0.6) { #{{{
         png(png0, height=600, width=600); print(p); dev.off()
     } #}}}
 } #}}}
-plot_Volcano <- function(x, results_name, highlight_genes=NULL, alpha=0.6, i_significant=NULL) {#  {{{
+plot_Volcano <- function(x, results_name, highlight_genes=NULL, alpha=0.6, i_significant=NULL, col_sig = "red", text_col = "black", text_size = 2.5, vline = NULL, hline = NULL, height = 1200, width = 1500, res = 300, ylim = NULL) {#  {{{
 	require(ggplot2)
+    library(ggrepel)
     x$log10p <- -log10(x$P.Value)
-    if(is.null(i_significant)) i_significant <- x$adj.P.Val <= 0.05
-    DIFF <- x
-	xlimit <- max(c(max(x$logFC), abs(min(x$logFC))))
-    png0 <- paste(results_name, "Volcano_plot.png", sep="_")
-    png1 <- paste(results_name, "Volcano_plot.no_label.png", sep="_")
-    png2 <- paste(results_name, "Volcano_plot.with_gene_labels1.png", sep="_")
-    png3 <- paste(results_name, "Volcano_plot.with_gene_labels2.png", sep="_")
-	p <- ggplot(x, aes(x = logFC, y = -log10(P.Value), colour = adj.P.Val <= 0.05)) + geom_point(size = 1.5, alpha = 0.7) + xlim(-xlimit, xlimit) + geom_vline(xintercept = 2, colour = "blue", size = 1, alpha = 0.3) + geom_vline(xintercept = -2, colour = "blue", size = 1, alpha = 0.3) + scale_colour_manual(values = c("TRUE" = "red", "FALSE" = "black")) + xlab("Log 2 Fold-Change")
-    if(!is.null(highlight_genes)){ #{{{
+    if(is.null(i_significant)) {
+        i_significant <- x$adj.P.Val <= 0.05
+    }
+    x$Sig <- "NS"
+    if(is.list(i_significant)) {#{{{
+        for(i in seq_along(i_significant)) {
+            name_ <- names(i_significant)[i]
+            x$Sig[i_significant[[i]]] <- name_
+        }
+        names(col_sig) <- names(i_significant)
+        col_sig_ <- if("NS" %in% x$Sig) c(NS = "gray", col_sig) else col_sig
+    } else if(is.numeric(i_significant) || is.logic(i_significant)) {
+        x$Sig[i_significant] <- "Significant"
+        col_sig_ <- c("NS" = "gray", Significant = col_sig)
+    } else if(is.character(i_significant) || is.factor(i_significant)) {
+        x$Sig <- i_significant
+        col_sig_ <- col_sig
+    }#}}}
+    x$label <- ""
+    if(!is.null(highlight_genes)) {
         i <- match(highlight_genes, x$external_gene_name)
-        diff2 <- DIFF[i,,drop=FALSE]
-        diff1 <- DIFF[-i,,drop=FALSE]
-        p <- ggplot(diff1, aes(x = logFC, y = log10p, colour = adj.P.Val <= 0.05)) + geom_point(size = 1.5, alpha = 0.7) + xlim(-xlimit, xlimit) + geom_vline(xintercept = 2, colour = "blue", size = 1, alpha = 0.3) + geom_vline(xintercept = -2, colour = "blue", size = 1, alpha = 0.3) + scale_colour_manual(values = c("TRUE" = "red", "FALSE" = "black")) + xlab("Log 2 Fold-Change")
-        p1 <- geom_point(data=diff2, aes(x = logFC, y = log10p),colour="darkblue", size=1.5)
-        p1.5 <- geom_point(data=diff2, aes(x = logFC, y = log10p),colour="darkblue", size=1.5, alpha=alpha)
-        p2 <- geom_text(data=diff2, aes(x = logFC, y = log10p, label=external_gene_name), colour="darkblue", hjust=-0.33, vjust=0.5, size=4)
-        p3 <- geom_text(data=diff2, aes(x = logFC, y = log10p, label=external_gene_name), colour="darkblue", hjust=0.5, vjust=-1, size=4)
-        png(png1, height=600, width=600); print(p+p1); dev.off()
-        png(png2, height=600, width=600); print(p+p1.5+p2); dev.off()
-        png(png3, height=600, width=600); print(p+p1.5+p3); dev.off()
-    } else {
-        png(png0, height=600, width=600); print(p); dev.off()
+        x$label[i] <- x$external_gene_name[i]
+    }
+
+	xlimit <- max(c(max(x$logFC), abs(min(x$logFC))))
+    ylimit <- if(is.null(ylim)) max(-log10(x$P.Value)) else ylim
+    png0 <- paste(results_name, "Volcano_plot.png", sep="_")
+    png1 <- paste(results_name, "Volcano_plot.with_gene_labels.png", sep="_")
+    # png3 <- paste(results_name, "Volcano_plot.with_gene_labels2.png", sep="_")
+	p <- ggplot(x, aes(x = logFC, y = -log10(P.Value), colour = Sig, label = label)) + geom_point(size = 1.5, alpha = alpha) + xlim(-xlimit, xlimit) + scale_colour_manual(values = col_sig_) + xlab("Log 2 Fold-Change") + ylim(0, ylimit)
+    if(length(col_sig_)>0) {
+        for(i in 2:length(col_sig_))
+            p <- p + geom_point(data = subset(x, Sig == names(col_sig_)[i]),
+                                aes(x = logFC, y = -log10(P.Value), colour = Sig),
+                                           size = 1.5, alpha = alpha)
+    }
+    if(!is.null(vline)) p <- p + geom_vline(xintercept = vline, colour = "gray", size = 1, alpha = 0.3)
+    if(!is.null(hline)) p <- p + geom_hline(yintercept = vline, colour = "gray", size = 1, alpha = 0.3)
+
+    png(png0, height=height, width=width, res = 300); print(p + theme_classic()); dev.off()
+
+    if(!is.null(highlight_genes)){ #{{{
+        p1 <-  p + geom_text_repel(box.padding = 0.5, max.overlaps = Inf,
+                                   size = text_size,
+                                   min.segment.length = 0,
+                                   colour = text_col)
+
+
+        # p1 <- geom_text_repel(data=x2, aes(x = logFC, y = log10p, label=external_gene_name), colour=text_col,
+                              # size=2.5, min.segment.length = 0, segment.size = 0.8,
+                              # box.padding = 0.5, max.overlaps = Inf)
+        png(png1, height=height, width=width, res = 300); print(p1+theme_classic()); dev.off()
     } #}}}
 } #}}}
+
+plot_heatmap <- function(dat, sample.info, out, ann_gene = NULL, group_order = NULL, width = 4, height = 6, ...) {#{{{
+    library(ComplexHeatmap)
+    dat <- sweep(dat, 1, apply(dat, 1, mean, na.rm = TRUE))
+    dat <- sweep(dat, 1, apply(dat, 1, sd, na.rm = TRUE), "/")
+    ngenes <- nrow(dat)
+    # genes <- ann$external_gene_name[match(rownames(dat), ann$Feature_ID)]
+    genes <- rownames(dat)
+    if(is.null(group_order)) group_order <- sort(unique(sample.info$group))
+
+    # if(ngenes > 300) return()
+    fs <- if(ngenes < 10) 12 else 
+            round(10 / (sqrt(ngenes) - 3)) + 2
+
+    pdf(paste0(out, ".heatmap.pdf"), width = width, height=height); on.exit(dev.off())
+
+    if(!is.null(ann_gene) && any(ann_gene %in% genes)) {
+        ann_gene <- ann_gene[ann_gene %in% genes]
+        at <- match(ann_gene, genes)
+        ha <- rowAnnotation(foo = anno_mark(at = at, labels = ann_gene))
+    } else ha <- NULL
+    show_row_names <- is.null(ann_gene) & !is.null(genes)
+    # ha = rowAnnotation(foo = anno_mark(at = c(1:4, 20, 60, 97:100), labels = month.name[1:10]))
+    # Heatmap(m, name = "mat", cluster_rows = FALSE, right_annotation = ha)
+    print(Heatmap(as.matrix(dat), name = " ",
+            column_split = factor(as.character(sample.info$group), levels = group_order),
+            show_row_names = show_row_names,
+            right_annotation = ha,
+            row_names_gp = gpar(fontsize = fs),
+            cluster_row_slices = FALSE, 
+            cluster_column_slices = FALSE,
+            ...))
+}#}}}
 
 get.gene_count <- function(key.file, ann.file="all.gene_counts.tsv", top.dir=".", count.type="RPKM"){#  {{{
     #key.file <- "" # go to each key and use "gene_counts.txt
@@ -219,6 +283,17 @@ get.gene_count <- function(key.file, ann.file="all.gene_counts.tsv", top.dir="."
 }#}}}
 
 # pathway
+get.fisher.p <- function(i, n1, n2, n){ #{{{
+    a <- i
+    b <- n2 - i
+    c <- n1 - i
+    d <- (n - n1) - (n2 -i)
+    my.fisher <- function(a, b, c, d){
+        dat <- matrix(c(a, b, c, d), nrow=2)
+        fisher.test(dat, alternative="greater")$p.value
+    }
+    return(my.fisher(a, b, c, d))
+} #}}}
 get_msigdbr_dt <- function(species, pathway_types = c("GO_BP", "GO_MF", "KEGG")) {#{{{
     library(msigdbr)
     library(clusterProfiler)

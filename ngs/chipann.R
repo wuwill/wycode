@@ -243,15 +243,16 @@ peakPathway <- function(peakAnno,
                         tssRegion=c(-1000, 1000), flankDistance=3000,
                         #fun=c("enrichPathway", "enrichKEGG"),
                         organism = "hsa",  # kegg organism
-                        showCategory=15, title="Pathway Enrichment Analysis"){ #{{{
+                        showCategory=15, title="Pathway Enrichment Analysis", output_xls = FALSE, keyType = "SYMBOL", ...){ #{{{
     ## todo: https://bioconductor.org/packages/release/bioc/vignettes/clusterProfiler/inst/doc/clusterProfiler.html
     library(ReactomePA) # rectome pathway - enrichPathway
     library(DOSE) # disease ontology - enrichKEGG
     library(clusterProfiler) #  for Gene Ontology and KEGG enrichment - enrichGo
+    readable <- keyType != "SYMBOL"
     if(is.list(peakAnno)){ #{{{
-        genes = lapply(peakAnno, function(i) as.data.frame(i)$geneId)
+        genes = lapply(peakAnno, function(i) setdiff(as.data.frame(i)$geneId, NA))
         if(is.null(genes[[1]]))
-            genes = lapply(peakAnno, function(i) seq2gene(i, tssRegion=tssRegion, flankDistance=3000, TxDb=TxDb))
+            genes = lapply(peakAnno, function(i) setdiff(seq2gene(i, tssRegion=tssRegion, flankDistance=3000, TxDb=TxDb), NA))
         ret <- list()
         #ret$GO_CC <- enrichGO(gene          = gene,
         #OrgDb         = orgAnn,
@@ -265,18 +266,21 @@ peakPathway <- function(peakAnno,
                               ont           = "BP",
                               pAdjustMethod = "BH",
                               qvalueCutoff  = 0.05,
-                              readable      = TRUE)
+                              readable      = readable,
+                              keyType      = keyType, ...)
         ret$GO_BP <- compareCluster(geneCluster = genes,
                               OrgDb         = orgAnn,
                               fun           = "enrichGO",
                               ont           = "MF",
                               pAdjustMethod = "BH",
                               qvalueCutoff  = 0.05,
-                              readable      = TRUE)
+                              keyType = keyType,
+                              readable      = readable, ...)
         ret$KEGG <- compareCluster(geneCluster = genes,
                                    fun         = "enrichKEGG",
                                organism     = organism,
-                               qvalueCutoff = 0.05)
+                               keyType = keyType,
+                               qvalueCutoff = 0.05, ...)
 
         if(!is.null(pdf.file) && pdf.file!=""){ #{{{
             pdf(pdf.file); on.exit(dev.off())
@@ -289,7 +293,8 @@ peakPathway <- function(peakAnno,
     } #}}}
 
     # if peakAnno is not a list
-    gene <- as.data.frame(peakAnno)$geneID
+    gene <- setdiff(as.data.frame(peakAnno)$geneID, NA)
+    readable <- keyType != "SYMBOL"
     if(is.null(gene)) gene <- seq2gene(peakAnno, tssRegion = tssRegion, flankDistance = 3000, TxDb=TxDb)
     ret <- list()
     #ret$GO_CC <- enrichGO(gene          = gene,
@@ -303,16 +308,34 @@ peakPathway <- function(peakAnno,
                         ont           = "BP",
                         pAdjustMethod = "BH",
                         qvalueCutoff  = 0.05,
-                        readable      = TRUE)
+                        keyType = keyType,
+                        readable      = readable, ...)
     ret$GO_MF <- enrichGO(gene          = gene,
                         OrgDb         = orgAnn,
                         ont           = "MF",
                         pAdjustMethod = "BH",
                         qvalueCutoff  = 0.05,
-                        readable      = TRUE)
+                        keyType = keyType,
+                        readable      = readable, ...)
+    if(keyType == "SYMBOL") {
+        gene.df <- bitr(gene, fromType = "SYMBOL",
+                toType = c("ENTREZID", "SYMBOL"),
+                OrgDb = orgAnn)
+        gene <- gene.df$ENTREZID
+        keyType <- "ENTREZID"
+    }
     ret$KEGG <- enrichKEGG(gene         = gene,
                      organism     = organism,
-                     qvalueCutoff = 0.05)
+                     # keyType = keyType,
+                     qvalueCutoff = 0.05, ...)
+    if(output_xls) {#{{{
+        try(readr::write_tsv(as.data.frame(ret$GO_BP@result), paste0(gsub(".pdf$", "", pdf.file), ".GO_BP.all_pathways.xls")))
+        try( readr::write_tsv(as.data.frame(ret$GO_MF@result), paste0(gsub(".pdf$", "", pdf.file), ".GO_MF.all_pathways.xls")) )
+        try(readr::write_tsv(as.data.frame(ret$KEGG@result), paste0(gsub(".pdf$", "", pdf.file), ".KEGG.all_pathways.xls")))
+        try(readr::write_tsv(as.data.frame(ret$GO_BP), paste0(gsub(".pdf$", "", pdf.file), ".GO_BP.FDR0.05.xls")))
+        try(readr::write_tsv(as.data.frame(ret$GO_MF), paste0(gsub(".pdf$", "", pdf.file), ".GO_MF.FDR0.05.xls")))
+        try(readr::write_tsv(as.data.frame(ret$KEGG), paste0(gsub(".pdf$", "", pdf.file), ".KEGG.FDR0.05.xls")))
+    }#}}}
 
     if(!is.null(pdf.file) && pdf.file!=""){ #{{{
         pdf(pdf.file); on.exit(dev.off())
